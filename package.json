@@ -25,7 +25,7 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "npm run gen:check && npm run build"
+    "prepack": "npm run gen:check && npm run build"
   },
   "keywords": [
     "opencode",
