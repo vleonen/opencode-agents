@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-agents",
+  "version": "0.1.0",
+  "description": "OpenCode plugin + CLI that ships reusable subagents (designer, qa, reviewer) with model-fallback twins, installs them into the chosen scope, and registers the fallback policy in AGENTS.md.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "opencode-agents": "./dist/bin.mjs"
+  },
+  "files": [
+    "dist",
+    "src",
+    "agents",
+    "AGENTS.agents.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "gen": "node scripts/gen-agents.mjs",
+    "gen:check": "node scripts/gen-agents.mjs --check",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "agents",
+    "subagents",
+    "fallback",
+    "designer",
+    "qa",
+    "reviewer"
+  ],
+  "dependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opencode/plugin": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

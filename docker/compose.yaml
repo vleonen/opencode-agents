@@ -1,0 +1,46 @@
+# Two throwaway opencode instances for verifying the opencode-agents plugin
+# against the V1 and V2 plugin APIs. The host's opencode installation, config,
+# and state are never touched.
+#
+#   v1:  web UI + server on 127.0.0.1:15196
+#   v2:  web UI + server on 127.0.0.1:15296
+#
+# Build the bundles with docker/bundle.sh, then:
+#   docker compose -f docker/compose.yaml up -d --build
+
+name: opencode-agents-verify
+
+services:
+  v1:
+    build:
+      context: .
+      target: base
+      dockerfile: Dockerfile
+    image: opencode-agents-verify
+    init: true
+    working_dir: /workspace
+    command: opencode-v1 web --port 4096 --hostname 0.0.0.0
+    environment:
+      OPENCODE_SERVER_PASSWORD: agents-test
+      OPENCODE_SERVER_USERNAME: opencode
+      TZ: Europe/Moscow
+    ports:
+      - "127.0.0.1:15196:4096"
+    volumes:
+      # V1 discovers single-FILE plugins only.
+      - ./.out/opencode-agents.js:/root/.config/opencode/plugins/opencode-agents.js:ro
+      - ./opencode-agents.json:/root/.config/opencode/opencode-agents.json:ro
+
+  v2:
+    image: opencode-agents-verify
+    init: true
+    working_dir: /workspace
+    command: opencode-v2 serve --port 4096 --hostname 0.0.0.0 --service
+    environment:
+      OPENCODE_LOG_LEVEL: DEBUG
+      TZ: Europe/Moscow
+    ports:
+      - "127.0.0.1:15296:4096"
+    volumes:
+      - ./.out/opencode-agents.js:/root/.config/opencode/plugins/opencode-agents.js:ro
+      - ./opencode-agents.json:/root/.config/opencode/opencode-agents.json:ro
