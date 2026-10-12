@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   CONFIG_VERSION,
+  configWarnings,
   defaultChoices,
   defaultConfig,
   parseConfig,
@@ -52,5 +53,17 @@ describe("config", () => {
     writeConfig(file, c)
     expect(readConfig(file)).toEqual(c)
     expect(fs.readFileSync(file, "utf8").endsWith("\n")).toBe(true)
+  })
+
+  it("warns when a twin is not on an independent provider", () => {
+    expect(configWarnings(defaultConfig("global"))).toEqual([])
+
+    const same = defaultConfig("global")
+    same.agents.qa.fallback = same.agents.qa.model
+    expect(configWarnings(same).some((w) => w.startsWith("qa:"))).toBe(true)
+
+    const sameProvider = defaultConfig("global")
+    sameProvider.agents.reviewer.fallback = "zai-coding-plan/glm-5.2"
+    expect(configWarnings(sameProvider).some((w) => w.includes("share provider"))).toBe(true)
   })
 })

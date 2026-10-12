@@ -69,3 +69,27 @@ export function writeConfig(configPath: string, config: AgentsConfig): void {
   fs.mkdirSync(path.dirname(configPath), { recursive: true })
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`)
 }
+
+function providerOf(ref: string): string {
+  const i = ref.indexOf("/")
+  return i < 0 ? ref : ref.slice(0, i)
+}
+
+/**
+ * Non-fatal configuration warnings. The fallback twin is only useful when it
+ * runs on a different provider than the primary, so flag a twin that does not.
+ */
+export function configWarnings(config: AgentsConfig): string[] {
+  const out: string[] = []
+  for (const role of ROLES) {
+    const { model, fallback } = config.agents[role]
+    if (model === fallback) {
+      out.push(`${role}: fallback equals model (${model}) — the twin will hit the same limits`)
+    } else if (providerOf(model) === providerOf(fallback)) {
+      out.push(
+        `${role}: model and fallback share provider "${providerOf(model)}" — a provider-wide limit would fail both`,
+      )
+    }
+  }
+  return out
+}

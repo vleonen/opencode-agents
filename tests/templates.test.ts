@@ -36,4 +36,18 @@ describe("renderTemplates", () => {
       expect(twin?.content).toContain("Fallback twin")
     }
   })
+
+  it("twin differs from primary only in description and model", () => {
+    const normalize = (s: string): string =>
+      s
+        .split("\n")
+        .filter((l) => !l.startsWith("description:") && !l.startsWith("model:"))
+        .join("\n")
+    for (const role of ["designer", "qa", "reviewer"] as const) {
+      const primary = rendered.find((r) => r.fileName === `${role}.md`)?.content ?? ""
+      const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""
+      expect(primary.length).toBeGreaterThan(0)
+      expect(normalize(twin)).toBe(normalize(primary))
+    }
+  })
 })

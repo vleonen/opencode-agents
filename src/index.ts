@@ -16,7 +16,7 @@
  * There are NO runtime imports from `@opencode/plugin`: opencode cannot resolve
  * it from bare directory plugins. Types are structural on purpose.
  */
-import { type AgentsConfig, ROLES } from "./core/config"
+import { type AgentsConfig, ROLES, configWarnings } from "./core/config"
 import { findExistingConfig } from "./core/discover"
 import { type FileAction, install } from "./core/install"
 
@@ -137,13 +137,15 @@ async function heal(projectDir: string | undefined, ctx?: AgentsV2Context): Prom
     log("info", "no opencode-agents.json found — run `opencode-agents init` to install the bundled agents")
     return
   }
+  for (const warning of configWarnings(found.config)) log("warn", warning)
   const report = install({
     config: found.config,
     ...(projectDir !== undefined ? { projectDir } : {}),
     force: false,
     writePolicy: true,
   })
-  log("info", `installed from ${found.path}: ${summarizeReport(report.files, report.policy)}`)
+  const changed = report.files.some((f) => f.action !== "unchanged") || report.policy !== "unchanged"
+  if (changed) log("info", `installed from ${found.path}: ${summarizeReport(report.files, report.policy)}`)
   if (ctx) await warnUnavailable(ctx, found.config)
 }
 

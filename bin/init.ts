@@ -20,6 +20,7 @@
  *   --force                   overwrite files not owned by opencode-agents
  *   --adopt                   take ownership of existing files whose content already matches
  *   --no-policy               do not merge the AGENTS.md policy block
+ *   --keep-config             on uninstall, keep opencode-agents.json
  *   --help, -h
  */
 import { execFileSync } from "node:child_process"
@@ -30,6 +31,7 @@ import {
   type AgentsConfig,
   type Role,
   ROLES,
+  configWarnings,
   defaultConfig,
   isRole,
   readConfig,
@@ -156,7 +158,9 @@ function applySet(config: AgentsConfig, expr: string): void {
   const key = expr.slice(0, eq).trim()
   const value = expr.slice(eq + 1).trim()
   if (value === "") throw new Error(`--set has an empty model (got "${expr}")`)
-  const [rolePart, fieldPart] = key.split(".")
+  const parts = key.split(".")
+  if (parts.length > 2) throw new Error(`--set key has too many segments (expected <agent> or <agent>.<field>): ${key}`)
+  const [rolePart, fieldPart] = parts
   if (!rolePart || !isRole(rolePart)) throw new Error(`--set references an unknown agent: ${key}`)
   const role: Role = rolePart
   const field = fieldPart ?? "model"
@@ -280,7 +284,6 @@ async function run(): Promise<number> {
     return 0
   }
 
-  const scope: Scope = args.scope ?? "global"
   const projectDir = args.dir && args.dir.trim() !== "" ? args.dir : process.cwd()
 
   // Build the base config: an explicit file, else any existing config (so a
@@ -295,10 +298,15 @@ async function run(): Promise<number> {
     config = loaded
   } else {
     const found = findExistingConfig({ projectDir })
-    config = found ? found.config : defaultConfig(scope)
+    config = found ? found.config : defaultConfig(args.scope ?? "global")
   }
-  // --scope always wins; otherwise keep whatever the existing config said.
-  if (args.scope) config.scope = scope
+  // The effective scope: --scope wins, else the existing config's, else global.
+  // Everything (targets, projectDir, config write) uses this single value.
+  const scope: Scope = args.scope ?? config.scope
+  config.scope = scope
+  const projectDirOpt = scope === "project" ? { projectDir } : {}
+  const targets = resolveTargets({ scope, ...projectDirOpt })
+
   for (const set of args.sets) {
     try {
       applySet(config, set)
@@ -308,9 +316,11 @@ async function run(): Promise<number> {
     }
   }
 
+  for (const warning of configWarnings(config)) process.stderr.write(`warning: ${warning}\n`)
+
   const installOpts: InstallOptions = {
     config,
-    ...(scope === "project" ? { projectDir } : {}),
+    ...projectDirOpt,
     force: args.force,
     adopt: args.adopt,
     writePolicy: args.writePolicy,
@@ -332,8 +342,9 @@ async function run(): Promise<number> {
   const interactive = !args.nonInteractive && process.stdin.isTTY === true
   if (interactive) await promptModels(config)
 
-  writeConfig(resolveTargets({ scope, ...(scope === "project" ? { projectDir } : {}) }).configPath, config)
   const report = install(installOpts)
+  // Persist the config only after the install succeeded.
+  writeConfig(targets.configPath, config)
   printReport("Install", report.targets, report.files, report.policy)
   process.stdout.write(
     "\nVerify:  opencode debug agents | grep -E 'designer|qa|reviewer'\n",

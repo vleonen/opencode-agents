@@ -12,27 +12,53 @@ export function hasPolicy(content: string): boolean {
   return content.includes(POLICY_BEGIN) && content.includes(POLICY_END)
 }
 
-/** Insert or replace the policy block. Idempotent. */
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0
+  let idx = haystack.indexOf(needle)
+  while (idx !== -1) {
+    count++
+    idx = haystack.indexOf(needle, idx + needle.length)
+  }
+  return count
+}
+
+/** Insert or replace the policy block. Idempotent, even for malformed markers. */
 export function upsertPolicy(content: string, policyText: string): string {
   const block = policyBlock(policyText)
   const bi = content.indexOf(POLICY_BEGIN)
   const ei = content.indexOf(POLICY_END)
-  if (bi !== -1 && ei !== -1 && ei > bi) {
+
+  // Well-formed, single, in order: replace in place.
+  if (bi !== -1 && ei !== -1 && ei > bi && countOccurrences(content, POLICY_BEGIN) === 1 && countOccurrences(content, POLICY_END) === 1) {
     return content.slice(0, bi) + block + content.slice(ei + POLICY_END.length)
   }
-  const trimmed = content.replace(/\s+$/, "")
+
+  // Absent, duplicated, or out of order: drop everything from the first BEGIN to
+  // the last END (plus any orphan markers), then append a single fresh block.
+  const firstBegin = content.indexOf(POLICY_BEGIN)
+  const lastEnd = content.lastIndexOf(POLICY_END)
+  let cleaned: string
+  if (firstBegin !== -1 && lastEnd !== -1 && lastEnd > firstBegin) {
+    cleaned = content.slice(0, firstBegin) + content.slice(lastEnd + POLICY_END.length)
+  } else {
+    cleaned = content.split(POLICY_BEGIN).join("").split(POLICY_END).join("")
+  }
+  const trimmed = cleaned.replace(/\s+$/, "")
   const prefix = trimmed.length > 0 ? `${trimmed}\n\n` : ""
   return `${prefix}${block}\n`
 }
 
-/** Remove the policy block and collapse the blank lines it left behind. */
+/** Remove the policy block, touching only whitespace at the seam. */
 export function stripPolicy(content: string): string {
   const bi = content.indexOf(POLICY_BEGIN)
   const ei = content.indexOf(POLICY_END)
   if (bi === -1 || ei === -1 || ei < bi) return content
-  const joined = content.slice(0, bi) + content.slice(ei + POLICY_END.length)
-  const compact = joined.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "")
-  return compact.length > 0 ? `${compact}\n` : ""
+  const left = content.slice(0, bi).replace(/\s+$/, "")
+  const right = content.slice(ei + POLICY_END.length).replace(/^\s+/, "")
+  if (left === "" && right === "") return ""
+  if (left === "") return `${right.replace(/\s+$/, "")}\n`
+  if (right === "") return `${left}\n`
+  return `${left}\n\n${right.replace(/\s+$/, "")}\n`
 }
 
 export type PolicyAction = "created" | "updated" | "unchanged"

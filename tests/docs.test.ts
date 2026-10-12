@@ -62,6 +62,22 @@ describe("stripPolicy", () => {
   })
 })
 
+describe("malformed markers", () => {
+  it("repairs out-of-order markers without duplicating them", () => {
+    const broken = `intro\n${POLICY_END}\nmid\n${POLICY_BEGIN}\n`
+    const out = upsertPolicy(broken, POLICY)
+    expect((out.match(new RegExp(POLICY_BEGIN, "g")) ?? []).length).toBe(1)
+    expect((out.match(new RegExp(POLICY_END, "g")) ?? []).length).toBe(1)
+    expect(out).toContain("Fallback rule.")
+  })
+
+  it("drops an orphan BEGIN marker", () => {
+    const out = upsertPolicy(`intro\n${POLICY_BEGIN}\nstale\n`, POLICY)
+    expect((out.match(new RegExp(POLICY_BEGIN, "g")) ?? []).length).toBe(1)
+    expect((out.match(new RegExp(POLICY_END, "g")) ?? []).length).toBe(1)
+  })
+})
+
 describe("policy files", () => {
   it("creates, updates, and strips", () => {
     const dir = tmp()

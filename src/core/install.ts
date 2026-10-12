@@ -49,10 +49,17 @@ function resolve(opts: { config: AgentsConfig; projectDir?: string; env?: Env; h
 
 export function install(opts: InstallOptions): InstallReport {
   const targets = resolve(opts)
-  fs.mkdirSync(targets.agentDir, { recursive: true })
   const manifest = readManifest(targets.agentDir)
   const rendered = renderTemplates(opts.config)
   const files: FileAction[] = []
+  // Create the agent dir lazily, so an all-skipped run leaves no stray directory.
+  let dirReady = false
+  const ensureDir = (): void => {
+    if (!dirReady) {
+      fs.mkdirSync(targets.agentDir, { recursive: true })
+      dirReady = true
+    }
+  }
 
   for (const r of rendered) {
     const target = path.join(targets.agentDir, r.fileName)
@@ -61,6 +68,7 @@ export function install(opts: InstallOptions): InstallReport {
     const owned = manifest.files[r.fileName] !== undefined
 
     if (!exists) {
+      ensureDir()
       fs.writeFileSync(target, r.content)
       manifest.files[r.fileName] = newHash
       files.push({ fileName: r.fileName, action: "created" })
@@ -74,7 +82,8 @@ export function install(opts: InstallOptions): InstallReport {
       if (same) {
         files.push({ fileName: r.fileName, action: "unchanged" })
       } else {
-        fs.writeFileSync(target, r.content)
+        ensureDir()
+      fs.writeFileSync(target, r.content)
         files.push({ fileName: r.fileName, action: "updated" })
       }
       manifest.files[r.fileName] = newHash
@@ -88,6 +97,7 @@ export function install(opts: InstallOptions): InstallReport {
     }
 
     if (opts.force) {
+      ensureDir()
       fs.writeFileSync(target, r.content)
       manifest.files[r.fileName] = newHash
       files.push({ fileName: r.fileName, action: "updated", reason: "overwrote unowned file (--force)" })

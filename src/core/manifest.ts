@@ -18,6 +18,11 @@ export function emptyManifest(): Manifest {
   return { version: 1, files: {} }
 }
 
+/** A manifest key must be a bare file name — never a path. */
+function isSafeFileName(name: string): boolean {
+  return name !== "" && !name.includes("/") && !name.includes("\\") && !name.includes("..")
+}
+
 export function readManifest(agentDir: string): Manifest {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(agentDir, MANIFEST_NAME), "utf8")) as unknown
@@ -26,7 +31,7 @@ export function readManifest(agentDir: string): Manifest {
       const files: Record<string, string> = {}
       if (rec.files && typeof rec.files === "object" && !Array.isArray(rec.files)) {
         for (const [k, v] of Object.entries(rec.files as Record<string, unknown>)) {
-          if (typeof v === "string") files[k] = v
+          if (typeof v === "string" && isSafeFileName(k)) files[k] = v
         }
       }
       return { version: typeof rec.version === "number" ? rec.version : 1, files }
@@ -38,8 +43,15 @@ export function readManifest(agentDir: string): Manifest {
 }
 
 export function writeManifest(agentDir: string, manifest: Manifest): void {
+  const file = path.join(agentDir, MANIFEST_NAME)
+  const next = `${JSON.stringify(manifest, null, 2)}\n`
+  try {
+    if (fs.readFileSync(file, "utf8") === next) return
+  } catch {
+    /* not present yet */
+  }
   fs.mkdirSync(agentDir, { recursive: true })
-  fs.writeFileSync(path.join(agentDir, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`)
+  fs.writeFileSync(file, next)
 }
 
 export function removeManifest(agentDir: string): void {
