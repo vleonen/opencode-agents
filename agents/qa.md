@@ -1,5 +1,5 @@
 ---
-description: "QA Automation and Performance Engineer optimized for executing tests, running benchmarks, and maintaining test harness infrastructure."
+description: QA Automation and Performance Engineer optimized for executing tests, running benchmarks, and maintaining test harness infrastructure.
 mode: all
 model: {{MODEL}}
 permissions:
