@@ -15,6 +15,8 @@
  *                             e.g. --set designer=zai-coding-plan/glm-5.3
  *                                  --set designer.fallback=deepseek/deepseek-v4-pro
  *                                  --set designer.fallback=   (clears the twin: primary-only)
+ *   --add-root <agent>=<dir>  allow <agent> to edit <dir> without approval
+ *                             (project-relative; `.` = whole project). Repeatable.
  *   --config <file>           base JSON config to start from
  *   --yes, -y                 accept defaults without prompting
  *   --non-interactive         never prompt (same as --yes)
@@ -25,6 +27,8 @@
  *   --help, -h
  */
 import { execFileSync } from "node:child_process"
+import fs from "node:fs"
+import path from "node:path"
 import readline from "node:readline/promises"
 import process from "node:process"
 
@@ -38,9 +42,9 @@ import {
   readConfig,
   writeConfig,
 } from "../src/core/config"
-import { findExistingConfig } from "../src/core/discover"
 import { type FileAction, type InstallOptions, install, inspect, uninstall } from "../src/core/install"
-import { type Scope, type Targets, resolveTargets } from "../src/core/paths"
+import { parseModifyRootsInput, parseScopeInput } from "../src/core/input"
+import { type Scope, type Targets, resolveGlobalConfigDir, resolveTargets } from "../src/core/paths"
 
 type Command = "init" | "inspect" | "uninstall" | "help"
 
@@ -49,6 +53,7 @@ interface Args {
   scope?: Scope
   dir?: string
   sets: string[]
+  roots: string[]
   configFile?: string
   nonInteractive: boolean
   force: boolean
@@ -67,10 +72,13 @@ function usage(): string {
     "  opencode-agents uninstall [options]   remove owned files + policy block",
     "",
     "Options:",
-    "  --scope global|project    install target (default: global)",
+    "  --scope global|project    install target (a fresh interactive `init` asks;",
+    "                            otherwise defaults to existing config, else global)",
     "  --dir <path>              project directory for --scope project (default: cwd)",
     "  --set <agent>[.<field>]=<model>   field: model|primary (default) or fallback;",
     "                                    an empty fallback clears the twin (primary-only agent)",
+    "  --add-root <agent>=<dir>  allow <agent> to edit <dir> without approval",
+    "                            (project-relative; `.` = whole project). Repeatable.",
     "  --config <file>           base JSON config",
     "  --yes, -y                 accept defaults, no prompts",
     "  --non-interactive         never prompt",
@@ -81,8 +89,9 @@ function usage(): string {
     "  --help, -h                show this help",
     "",
     "Examples:",
-    "  opencode-agents init",
-    "  opencode-agents init --scope project --dir .",
+    "  opencode-agents init                                  # interactive; asks project vs global",
+    "  opencode-agents init --scope project --dir .          # install into this project",
+    "  opencode-agents init --scope project --dir . --add-root qa=. --non-interactive",
     "  opencode-agents init --yes --set qa.fallback=deepseek/deepseek-flash",
   ].join("\n")
 }
@@ -91,6 +100,7 @@ function parseArgs(argv: string[]): Args {
   const args: Args = {
     command: "init",
     sets: [],
+    roots: [],
     nonInteractive: false,
     force: false,
     adopt: false,
@@ -124,6 +134,9 @@ function parseArgs(argv: string[]): Args {
         break
       case "--set":
         args.sets.push(rest[++i] ?? "")
+        break
+      case "--add-root":
+        args.roots.push(rest[++i] ?? "")
         break
       case "--config":
         args.configFile = rest[++i] ?? ""
@@ -174,6 +187,16 @@ function applySet(config: AgentsConfig, expr: string): void {
   } else {
     throw new Error(`--set field must be model|primary|fallback (got "${field}")`)
   }
+}
+
+function applyRoot(config: AgentsConfig, expr: string): void {
+  const eq = expr.indexOf("=")
+  if (eq < 0) throw new Error(`--add-root expects <agent>=<dir> (got "${expr}")`)
+  const rolePart = expr.slice(0, eq).trim()
+  const dir = expr.slice(eq + 1).trim()
+  if (!isRole(rolePart)) throw new Error(`--add-root references an unknown agent: ${rolePart || "(empty)"}`)
+  if (dir === "") throw new Error(`--add-root needs a directory (got "${expr}")`)
+  config.agents[rolePart].modifyRoots.push(dir)
 }
 
 /** Registered models from the running opencode, as `provider/model`. */
@@ -259,6 +282,41 @@ async function promptModels(config: AgentsConfig): Promise<void> {
   process.stdout.write("\n")
 }
 
+/** Ask where a fresh `init` should install. Returns the chosen scope. */
+async function promptScope(projectDir: string, globalAgentDir: string, fallback: Scope): Promise<Scope> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await rl.question(
+      `Install scope — [p]roject (${path.join(projectDir, ".opencode", "agents")}) ` +
+        `or [g]lobal (${globalAgentDir})? [${fallback === "project" ? "p" : "g"}]: `,
+    )
+    return parseScopeInput(answer, fallback)
+  } finally {
+    rl.close()
+  }
+}
+
+/** Ask for the qa agent's modification directories. Blank keeps, `none` clears. */
+async function promptModifyRoots(config: AgentsConfig): Promise<void> {
+  const current = config.agents.qa.modifyRoots
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await rl.question(
+      `qa directories to allow editing without approval (comma-separated; "." = whole project; ` +
+        `"none" to clear; blank keeps [${current.length > 0 ? current.join(", ") : "none"}]): `,
+    )
+    const trimmed = answer.trim()
+    if (trimmed === "") return
+    if (/^(none|no|-)$/i.test(trimmed)) {
+      config.agents.qa.modifyRoots = []
+      return
+    }
+    config.agents.qa.modifyRoots = parseModifyRootsInput(trimmed)
+  } finally {
+    rl.close()
+  }
+}
+
 function printReport(
   title: string,
   targets: Targets,
@@ -311,10 +369,20 @@ async function run(): Promise<number> {
   }
 
   const projectDir = args.dir && args.dir.trim() !== "" ? args.dir : process.cwd()
+  const interactive = !args.nonInteractive && process.stdin.isTTY === true
+  const globalConfigDir = resolveGlobalConfigDir(process.env)
+  const globalAgentDir = path.join(globalConfigDir, "agent")
+  const hasProjectMarker =
+    fs.existsSync(path.join(projectDir, ".git")) || fs.existsSync(path.join(projectDir, ".opencode"))
+  const projectConfig = readConfig(path.join(projectDir, ".opencode", "opencode-agents.json"))
+  const globalConfig = readConfig(path.join(globalConfigDir, "opencode-agents.json"))
 
-  // Build the base config: an explicit file, else any existing config (so a
-  // re-run keeps the user's model choices), else built-in defaults.
+  // Build the base config and the effective scope. Precedence: an explicit
+  // --config, then an existing project config, then (interactive `init` only) a
+  // scope prompt, then an explicit --scope, then the global config, then global.
+  // A fresh project inherits the global config's model choices.
   let config: AgentsConfig
+  let scope: Scope
   if (args.configFile) {
     const loaded = readConfig(args.configFile)
     if (!loaded) {
@@ -322,13 +390,22 @@ async function run(): Promise<number> {
       return 2
     }
     config = loaded
+    scope = args.scope ?? config.scope
+  } else if (projectConfig) {
+    config = projectConfig
+    scope = args.scope ?? "project"
+  } else if (interactive && args.command === "init" && args.scope === undefined) {
+    scope = await promptScope(projectDir, globalAgentDir, hasProjectMarker ? "project" : "global")
+    config = globalConfig ?? defaultConfig(scope)
   } else {
-    const found = findExistingConfig({ projectDir })
-    config = found ? found.config : defaultConfig(args.scope ?? "global")
+    scope = args.scope ?? globalConfig?.scope ?? "global"
+    config = globalConfig ?? defaultConfig(scope)
+    if (args.command === "init" && args.scope === undefined && hasProjectMarker) {
+      process.stderr.write(
+        `note: installing globally; pass --scope project to install into ${path.join(projectDir, ".opencode")}\n`,
+      )
+    }
   }
-  // The effective scope: --scope wins, else the existing config's, else global.
-  // Everything (targets, projectDir, config write) uses this single value.
-  const scope: Scope = args.scope ?? config.scope
   config.scope = scope
   const projectDirOpt = scope === "project" ? { projectDir } : {}
   const targets = resolveTargets({ scope, ...projectDirOpt })
@@ -336,6 +413,15 @@ async function run(): Promise<number> {
   for (const set of args.sets) {
     try {
       applySet(config, set)
+    } catch (err) {
+      process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`)
+      return 2
+    }
+  }
+
+  for (const root of args.roots) {
+    try {
+      applyRoot(config, root)
     } catch (err) {
       process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`)
       return 2
@@ -365,15 +451,18 @@ async function run(): Promise<number> {
   }
 
   // init
-  const interactive = !args.nonInteractive && process.stdin.isTTY === true
-  if (interactive) await promptModels(config)
+  if (interactive) {
+    await promptModels(config)
+    await promptModifyRoots(config)
+  }
 
   const report = install(installOpts)
   // Persist the config only after the install succeeded.
   writeConfig(targets.configPath, config)
   printReport("Install", report.targets, report.files, report.policy, report.orphaned)
   process.stdout.write(
-    "\nVerify:  opencode debug agents | grep -E 'designer|qa|reviewer'\n",
+    "\nVerify:  opencode-agents inspect   # lists the owned files and policy for this scope\n" +
+      "         opencode debug agent designer   # OpenCode V1: shows the applied agent config\n",
   )
   return 0
 }

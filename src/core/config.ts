@@ -28,6 +28,12 @@ export interface AgentChoice {
   fallback?: string
   /** Project/user rules rendered into the template's override slot (never overwritten by upgrades). */
   permissions: PermissionRule[]
+  /**
+   * Project-relative directories this agent may edit without approval, rendered
+   * as `edit` allow rules. `.` allows the whole project. Empty by default
+   * (edits then fall through to the template's `edit` gate).
+   */
+  modifyRoots: string[]
   /** Mode for the fallback twin. Default `subagent`: excluded from the agent selector, still launchable. */
   twinMode: TwinMode
   /** Hide the fallback twin from listings (`hidden: true`). Default false. */
@@ -58,9 +64,20 @@ function parsePermissions(raw: unknown): PermissionRule[] {
   return out
 }
 
+/** Defensive parse: keep non-empty strings, drop the rest. */
+function parseModifyRoots(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const item of raw) {
+    const value = nonEmptyString(item)
+    if (value) out.push(value)
+  }
+  return out
+}
+
 /** Built-in recommendations, keyed off the primary provider (z.ai) and a different-provider twin. */
 export function defaultChoices(): Record<Role, AgentChoice> {
-  const twin = { twinMode: "subagent" as const, twinHidden: false }
+  const twin = { twinMode: "subagent" as const, twinHidden: false, modifyRoots: [] as string[] }
   return {
     designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
     reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
@@ -90,7 +107,14 @@ export function parseConfig(data: unknown): AgentsConfig | null {
     const fallback = nonEmptyString(raw.fallback) ?? undefined
     const twinMode: TwinMode = raw.twinMode === "all" ? "all" : "subagent"
     const twinHidden = raw.twinHidden === true
-    agents[role] = { model, fallback, permissions: parsePermissions(raw.permissions), twinMode, twinHidden }
+    agents[role] = {
+      model,
+      fallback,
+      permissions: parsePermissions(raw.permissions),
+      modifyRoots: parseModifyRoots(raw.modifyRoots),
+      twinMode,
+      twinHidden,
+    }
   }
   const version = typeof data.version === "number" && Number.isFinite(data.version) ? data.version : CONFIG_VERSION
   return { version, scope, agents }
@@ -122,6 +146,13 @@ export function configWarnings(config: AgentsConfig): string[] {
   const out: string[] = []
   for (const role of ROLES) {
     const choice = config.agents[role]
+    for (const root of choice.modifyRoots) {
+      if (root.startsWith("/") || root === "~" || root.startsWith("~/")) {
+        out.push(
+          `${role}: modifyRoots entry "${root}" is absolute or home-anchored — edit permissions match project-relative paths, so this entry will not apply; use a project-relative directory (or "." for the whole project)`,
+        )
+      }
+    }
     const { model, fallback } = choice
     if (fallback === undefined) {
       if (choice.twinMode !== "subagent" || choice.twinHidden) {

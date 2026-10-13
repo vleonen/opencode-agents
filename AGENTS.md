@@ -19,6 +19,24 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 - Render-time placeholders: `{{MODEL}}`, `{{FALLBACK_MODEL}}`, `{{TWIN_MODE}}`,
   `{{TWIN_HIDDEN}}`, `{{PERMISSION_OVERRIDES}}`; policy: `{{FALLBACK_TABLE_ROWS}}`,
   `{{FALLBACK_RULES}}`. `renderTemplates` throws if any `{{` survives.
+- Templates author permission rules in the V2 array shape; `renderTemplates`
+  rewrites the frontmatter to a **V1-native `permission:` map** (`shell`→`bash`,
+  `subagent`→`task`, `write`/`patch`→`edit`) so both runtimes honor it (V2
+  translates the legacy frontmatter via `ConfigMigrateV1.migrateAgent`). Never
+  emit a `permissions:` array: V1 would ignore it and V2 would treat it as a
+  provider request option. `docker/check.sh` asserts the rules on both runtimes,
+  and `tests/templates.test.ts` guards against a `permissions:` regression.
+- `agents.<role>.modifyRoots` (project-relative directories) renders `edit`
+  allow rules *before* `permissions`, so explicit rules win. Edit permission
+  resources are **worktree-relative** in both runtimes (V2
+  `FileAccess.resolve`, V1 `path.relative(worktree, filePath)`), so `~`/absolute
+  entries never match — `configWarnings` flags them and `.` maps to `**`. Mind
+  the wildcard `*`→`.*`: `**` also matches external absolute resources.
+- `bin/init.ts` prompts only when stdin is a TTY and `--non-interactive` is
+  absent: scope (fresh `init` with no project config and no `--scope`), models,
+  then qa's `modifyRoots`. The pure parsers live in `src/core/input.ts` and are
+  unit-tested; a non-interactive fresh `init` with no `--scope` still defaults to
+  global and prints a hint when the directory looks like a project.
 
 ## Layout
 
@@ -26,7 +44,7 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 |---|---|
 | `src/index.ts` | Plugin entrypoint — loaded **directly** by OpenCode, not bundled. |
 | `bin/init.ts` | CLI (`init` / `inspect` / `uninstall`); bundled to `dist/bin.mjs`. |
-| `src/core/` | Install/uninstall/inspect, scopes, config parse, policy render + merge, manifest, templates. |
+| `src/core/` | Install/uninstall/inspect, scopes, config + CLI-input parse, policy render + merge, manifest, templates. |
 | `agents/`, `AGENTS.agents.md` | Template sources (see above). |
 | `docker/` | Verification harnesses (not shipped). |
 | `tests/` | Vitest; each test isolates via a temp `OPENCODE_CONFIG_DIR`. |
@@ -71,9 +89,11 @@ bash docker/check-visibility.sh  # twin mode/hidden behavior on v2
 - Scopes: global = `<configDir>/agent` + `AGENTS.md` + `opencode-agents.json`;
   project = `<proj>/.opencode/agents` + `<proj>/AGENTS.md` + `<proj>/.opencode/opencode-agents.json`.
   `configDir` resolves `$OPENCODE_CONFIG_DIR` → `$XDG_CONFIG_HOME/opencode` → `~/.config/opencode`.
-- The policy block is delimited by `<!-- BEGIN opencode-agents -->` /
-  `<!-- END opencode-agents -->`; `upsertPolicy`/`stripPolicy` must stay idempotent and
-  repair malformed or duplicated markers without data loss.
+- The policy block is delimited by line-anchored `<!-- BEGIN opencode-agents -->`
+  and `<!-- END opencode-agents -->` markers; `upsertPolicy`/`stripPolicy` must stay
+  idempotent and repair malformed or duplicated markers without data loss. A
+  marker only counts as such on its own line, so docs that *mention* the markers
+  (like this file) are never mistaken for a policy block.
 - A role may be **primary-only** (no `fallback`): `renderTemplates` omits its
   `-fallback.md`, `renderPolicy` drops it from the policy table and rules, and an old
   twin is reported `orphaned` and left on disk — still a live `mode: subagent` agent,

@@ -4,6 +4,6 @@
   "agents": {
     "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
-    "qa": { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash" }
+    "qa": { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash", "modifyRoots": ["."] }
   }
 }

@@ -89,6 +89,29 @@ describe("config", () => {
     expect(c?.agents.designer.permissions).toEqual([])
   })
 
+  it("parses and preserves modifyRoots, dropping malformed entries", () => {
+    const c = parseConfig({
+      scope: "project",
+      agents: {
+        designer: { model: "a/b", fallback: "c/d" },
+        reviewer: { model: "a/b", fallback: "c/d" },
+        qa: { model: "a/b", fallback: "c/d", modifyRoots: ["src", "", "  ", 5, "./tests/"] },
+      },
+    })
+    expect(c?.agents.qa.modifyRoots).toEqual(["src", "./tests/"])
+    expect(c?.agents.designer.modifyRoots).toEqual([])
+    expect(parseConfig(JSON.parse(JSON.stringify(c)))).toEqual(c)
+  })
+
+  it("warns when a modifyRoots entry is absolute or home-anchored", () => {
+    const c = defaultConfig("global")
+    c.agents.qa.modifyRoots = ["/home/x/proj", "~/dev", "src"]
+    const warnings = configWarnings(c)
+    expect(warnings.some((w) => w.includes('"/home/x/proj"'))).toBe(true)
+    expect(warnings.some((w) => w.includes('"~/dev"'))).toBe(true)
+    expect(warnings.some((w) => w.includes('"src"'))).toBe(false)
+  })
+
   it("defaults twin visibility to subagent-only and visible", () => {
     const c = defaultConfig("global")
     expect(c.agents.qa.twinMode).toBe("subagent")

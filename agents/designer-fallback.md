@@ -4,15 +4,9 @@ mode: {{TWIN_MODE}}
 hidden: {{TWIN_HIDDEN}}
 model: {{FALLBACK_MODEL}}
 permissions:
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: subagent
-    resource: "*"
-    effect: deny
+  - {action: "edit", resource: "*", effect: deny}
+  - {action: "shell", resource: "*", effect: deny}
+  - {action: "subagent", resource: "*", effect: deny}
   # --- project/user permission overlays (rendered from opencode-agents.json) ---
   # {{PERMISSION_OVERRIDES}}
 ---

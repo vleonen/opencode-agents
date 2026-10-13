@@ -12,7 +12,8 @@ permissions:
   # {{PERMISSION_OVERRIDES}}
   # NOTE: file edits remain allowed via the base policy (matches old behavior).
   # To make the reviewer strictly read-only, add:
-  # - {action: edit, resource: "*", effect: deny}
+  #   edit:
+  #     "*": deny
 ---
 
 You are an expert code reviewer. Analyze the provided code changes or files. Focus on:

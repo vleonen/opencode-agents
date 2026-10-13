@@ -3,15 +3,9 @@ description: "Software designer. Turns a feature request, finding, or bug report
 mode: all
 model: {{MODEL}}
 permissions:
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: subagent
-    resource: "*"
-    effect: deny
+  - {action: "edit", resource: "*", effect: deny}
+  - {action: "shell", resource: "*", effect: deny}
+  - {action: "subagent", resource: "*", effect: deny}
   # --- project/user permission overlays (rendered from opencode-agents.json) ---
   # {{PERMISSION_OVERRIDES}}
 ---

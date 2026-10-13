@@ -78,6 +78,22 @@ describe("malformed markers", () => {
   })
 })
 
+describe("inline marker mentions", () => {
+  it("does not treat quoted markers as a block", () => {
+    const doc = "See `<!-- BEGIN opencode-agents -->` and `<!-- END opencode-agents -->`.\n"
+    expect(hasPolicy(doc)).toBe(false)
+    expect(stripPolicy(doc)).toBe(doc)
+  })
+
+  it("appends a real block without destroying prose that mentions the markers", () => {
+    const doc = "- delimited by `<!-- BEGIN opencode-agents -->` / `<!-- END opencode-agents -->`;\n"
+    const withBlock = upsertPolicy(doc, POLICY)
+    expect(withBlock).toContain(doc.trimEnd())
+    expect(withBlock).toContain("Fallback rule.")
+    expect(stripPolicy(withBlock)).toBe(doc)
+  })
+})
+
 describe("policy files", () => {
   it("creates, updates, and strips", () => {
     const dir = tmp()

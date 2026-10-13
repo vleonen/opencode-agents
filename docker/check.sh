@@ -53,6 +53,29 @@ check_files() { # check_files <service>
   fi
 }
 
+# Assert V1 actually applied the V1 `permission:` map (not just installed files).
+# The installed files are read by both runtimes, so a V2-only `permissions:`
+# array would leave V1 with no rules at all.
+check_v1_permission_map() { # check_v1_permission_map <role> <desc> <js-expr-over-has-and-leaked>
+  local role="$1" desc="$2" expr="$3" json result
+  json=$($COMPOSE exec -T v1 sh -c "cd /workspace && opencode-v1 debug agent $role 2>/dev/null" || true)
+  result=$(printf '%s' "$json" | EXPR="$expr" node -e '
+    let s = ""
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let a
+      try { a = JSON.parse(s) } catch (e) { process.stdout.write("parse-error"); return }
+      const rules = a.permission ?? []
+      const has = (p, act) => rules.some((r) => r.permission === p && r.action === act)
+      const matches = (p, act, pattern) => rules.some((r) => r.permission === p && r.action === act && r.pattern === pattern)
+      const leaked = Boolean(a.options && a.options.permissions)
+      try {
+        const ok = new Function("has", "matches", "leaked", "return (" + process.env.EXPR + ")")(has, matches, leaked)
+        process.stdout.write(ok ? "ok" : "false")
+      } catch (e) { process.stdout.write("expr-error:" + e.message) }
+    })')
+  if [ "$result" = "ok" ]; then ok "v1 $role: $desc"; else bad "v1 $role: $desc (got: $result)"; fi
+}
+
 echo "== V1 (opencode 1.18.x web) =="
 V1_CODE=$(wait_http -u opencode:agents-test http://127.0.0.1:15196/config) \
   && ok "v1 server answers + basic auth ($V1_CODE)" || bad "v1 server answers + basic auth (got $V1_CODE)"
@@ -62,6 +85,15 @@ curl -s -m 8 -u opencode:agents-test -X POST http://127.0.0.1:15196/session \
   -H 'Content-Type: application/json' -d '{"title":"agents-check-v1"}' -o /dev/null || true
 sleep 6
 check_files v1
+
+check_v1_permission_map designer "edit/shell/subagent denied" \
+  'has("edit","deny") && has("bash","deny") && has("task","deny") && !leaked'
+check_v1_permission_map reviewer "shell denied" \
+  'has("bash","deny") && !leaked'
+check_v1_permission_map qa "shell gate + destructive guards applied" \
+  'has("bash","ask") && has("bash","deny") && has("edit","ask") && !leaked'
+check_v1_permission_map qa "modifyRoots rendered as an edit allow" \
+  'matches("edit","allow","**") && !leaked'
 
 if [ "$($COMPOSE logs v1 2>&1 | grep -ciE 'plugin export is not a function|opencode-agents.*(error|failed)')" = "0" ]; then
   ok "v1 loader had no plugin errors"
@@ -96,6 +128,34 @@ V2_STATE=$(curl -s -m 8 -u "$V2_AUTH" http://127.0.0.1:15296/api/plugin \
 if [ "$V2_STATE" = "active" ]; then ok "v2 plugin listed as active"; else bad "v2 plugin listed as active (got: $V2_STATE)"; fi
 
 check_files v2
+
+# V2 migrates the V1 `permission:` map onto native `permissions` (legacy frontmatter).
+V2_AGENTS=$(curl -s -m 8 -u "$V2_AUTH" http://127.0.0.1:15296/api/agent || true)
+check_v2_permission() { # check_v2_permission <role> <action> <resource> <effect> <desc>
+  local role="$1" action="$2" resource="$3" effect="$4" desc="$5"
+  if printf '%s' "$V2_AGENTS" | ROLE="$role" ACTION="$action" RESOURCE="$resource" EFFECT="$effect" node -e '
+    let s = ""
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      let j
+      try { j = JSON.parse(s) } catch (e) { process.exit(2) }
+      const list = j.data || j
+      const a = (list || []).find((x) => x.id === process.env.ROLE)
+      const perms = (a && (a.permissions || a.permission)) || []
+      const ok = perms.some(
+        (r) => r.action === process.env.ACTION && r.resource === process.env.RESOURCE && r.effect === process.env.EFFECT,
+      )
+      process.exit(ok ? 0 : 1)
+    })'; then
+    ok "v2 $role: $desc"
+  else
+    bad "v2 $role: $desc"
+  fi
+}
+check_v2_permission designer edit "*" deny "V1 permission map migrated -> edit denied"
+check_v2_permission designer shell "*" deny "V1 permission map migrated -> shell denied"
+check_v2_permission designer subagent "*" deny "V1 permission map migrated -> subagent denied"
+check_v2_permission reviewer shell "*" deny "V1 permission map migrated -> shell denied"
+check_v2_permission qa edit "**" allow "modifyRoots -> edit allowed"
 
 if [ "$($COMPOSE logs v2 2>&1 | grep -ciE 'plugin export is not a function|opencode-agents.*(error|failed)')" = "0" ]; then
   ok "v2 loader had no plugin errors"

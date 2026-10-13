@@ -105,9 +105,6 @@ permissions:
   # --- specific exceptions AFTER their broad allow ---
   - {action: shell, resource: "sed -i *", effect: ask}
   - {action: shell, resource: "sed --in-place *", effect: ask}
-  # --- edits: dev trees allowed, elsewhere ask ---
-  - {action: edit, resource: "~/src/**", effect: allow}
-  - {action: edit, resource: "~/dev/**", effect: allow}
   # --- project/user permission overlays (rendered from opencode-agents.json) ---
   # {{PERMISSION_OVERRIDES}}
   # --- destructive guards LAST so no other rule overrides them ---
@@ -128,6 +125,6 @@ Execution Guidelines:
 
 Execution Strategy for High Autonomy:
 - **Discover silently:** Use pre-approved discovery tools (`find`, `grep`, `ls`) to understand the layout before suggesting actions.
-- **Path Autonomy:** Utilize your direct permission rights inside `~/src/` and `~/dev/` to autonomously patch, update, and fix broken test scripts or harness files.
+- **Path Autonomy:** Autonomously patch, update, and fix broken test scripts and harness files inside the directories this project allow-lists for modification (see `modifyRoots` in `opencode-agents.json`); elsewhere, edits prompt for approval.
 - **Batch commands:** Combine compound shell tasks into singular, predictable pipelines to avoid triggering consecutive `bash` approval windows.
 - **Prioritize Performance Baselines:** Before running intensive benchmark suites, optimize the environment execution state by changing the CPU frequency governor to "performance" using the exact pre-approved command: `sudo /usr/local/bin/set-cpu-governor.sh performance`.

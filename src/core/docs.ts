@@ -9,52 +9,61 @@ export function policyBlock(policyText: string): string {
 }
 
 export function hasPolicy(content: string): boolean {
-  return content.includes(POLICY_BEGIN) && content.includes(POLICY_END)
+  const { begins, ends } = markerLines(content)
+  return begins.length > 0 && ends.length > 0
 }
 
-function countOccurrences(haystack: string, needle: string): number {
-  let count = 0
-  let idx = haystack.indexOf(needle)
-  while (idx !== -1) {
-    count++
-    idx = haystack.indexOf(needle, idx + needle.length)
-  }
-  return count
+/**
+ * Line indices (0-based) of the markers. A marker only counts as such when it is
+ * a standalone line, so prose that merely *mentions* the markers (e.g. docs that
+ * quote them in backticks) is never treated as a block.
+ */
+function markerLines(content: string): { begins: number[]; ends: number[] } {
+  const begins: number[] = []
+  const ends: number[] = []
+  content.split("\n").forEach((line, index) => {
+    const trimmed = line.trim()
+    if (trimmed === POLICY_BEGIN) begins.push(index)
+    else if (trimmed === POLICY_END) ends.push(index)
+  })
+  return { begins, ends }
 }
 
 /** Insert or replace the policy block. Idempotent, even for malformed markers. */
 export function upsertPolicy(content: string, policyText: string): string {
   const block = policyBlock(policyText)
-  const bi = content.indexOf(POLICY_BEGIN)
-  const ei = content.indexOf(POLICY_END)
+  const lines = content.split("\n")
+  const { begins, ends } = markerLines(content)
 
   // Well-formed, single, in order: replace in place.
-  if (bi !== -1 && ei !== -1 && ei > bi && countOccurrences(content, POLICY_BEGIN) === 1 && countOccurrences(content, POLICY_END) === 1) {
-    return content.slice(0, bi) + block + content.slice(ei + POLICY_END.length)
+  if (begins.length === 1 && ends.length === 1 && (ends[0] as number) > (begins[0] as number)) {
+    const before = lines.slice(0, begins[0] as number)
+    const after = lines.slice((ends[0] as number) + 1)
+    return [...before, ...block.split("\n"), ...after].join("\n")
   }
 
   // Absent, duplicated, or out of order: drop everything from the first BEGIN to
   // the last END (plus any orphan markers), then append a single fresh block.
-  const firstBegin = content.indexOf(POLICY_BEGIN)
-  const lastEnd = content.lastIndexOf(POLICY_END)
-  let cleaned: string
-  if (firstBegin !== -1 && lastEnd !== -1 && lastEnd > firstBegin) {
-    cleaned = content.slice(0, firstBegin) + content.slice(lastEnd + POLICY_END.length)
-  } else {
-    cleaned = content.split(POLICY_BEGIN).join("").split(POLICY_END).join("")
-  }
-  const trimmed = cleaned.replace(/\s+$/, "")
+  const firstBegin = begins.length > 0 ? (begins[0] as number) : -1
+  const lastEnd = ends.length > 0 ? (ends[ends.length - 1] as number) : -1
+  const kept =
+    firstBegin !== -1 && lastEnd !== -1 && lastEnd > firstBegin
+      ? [...lines.slice(0, firstBegin), ...lines.slice(lastEnd + 1)]
+      : lines.filter((_, index) => !begins.includes(index) && !ends.includes(index))
+  const trimmed = kept.join("\n").replace(/\s+$/, "")
   const prefix = trimmed.length > 0 ? `${trimmed}\n\n` : ""
   return `${prefix}${block}\n`
 }
 
 /** Remove the policy block, touching only whitespace at the seam. */
 export function stripPolicy(content: string): string {
-  const bi = content.indexOf(POLICY_BEGIN)
-  const ei = content.indexOf(POLICY_END)
-  if (bi === -1 || ei === -1 || ei < bi) return content
-  const left = content.slice(0, bi).replace(/\s+$/, "")
-  const right = content.slice(ei + POLICY_END.length).replace(/^\s+/, "")
+  const lines = content.split("\n")
+  const { begins, ends } = markerLines(content)
+  const begin = begins[0]
+  const end = ends[0]
+  if (begin === undefined || end === undefined || end < begin) return content
+  const left = lines.slice(0, begin).join("\n").replace(/\s+$/, "")
+  const right = lines.slice(end + 1).join("\n").replace(/^\s+/, "")
   if (left === "" && right === "") return ""
   if (left === "") return `${right.replace(/\s+$/, "")}\n`
   if (right === "") return `${left}\n`

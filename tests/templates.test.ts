@@ -61,11 +61,28 @@ describe("renderTemplates", () => {
     for (const r of rendered) expect(r.content).not.toContain("PERMISSION_OVERRIDES")
   })
 
+  it("renders a V1 permission map, never the V2 permissions array", () => {
+    for (const r of rendered) {
+      expect(r.content).toContain("\npermission:\n")
+      expect(r.content).not.toContain("permissions:")
+      expect(r.content).not.toMatch(/^\s*- \{action:/m)
+    }
+  })
+
+  it("maps V2 actions onto V1 tool keys (shell->bash, subagent->task)", () => {
+    const designer = rendered.find((r) => r.fileName === "designer.md")?.content ?? ""
+    expect(designer).toContain("\n  bash:\n")
+    expect(designer).toContain("\n  edit:\n")
+    expect(designer).toContain("\n  task:\n")
+    expect(designer).not.toContain("\n  shell:\n")
+    expect(designer).not.toContain("\n  subagent:\n")
+  })
+
   it("keeps the qa shell gate before its allows, and the guards last", () => {
-    const lines = (rendered.find((r) => r.fileName === "qa.md")?.content ?? "").split("\n")
-    const gate = lines.findIndex((l) => l.includes("action: shell") && l.includes('resource: "*"') && l.includes("ask"))
-    const firstAllow = lines.findIndex((l) => l.includes('resource: "ls *"'))
-    const guard = lines.findIndex((l) => l.includes('resource: "rm -rf /"'))
+    const qa = rendered.find((r) => r.fileName === "qa.md")?.content ?? ""
+    const gate = qa.indexOf('"*": ask')
+    const firstAllow = qa.indexOf('"ls *": allow')
+    const guard = qa.indexOf('"rm -rf /": deny')
     expect(gate).toBeGreaterThan(-1)
     expect(firstAllow).toBeGreaterThan(gate)
     expect(guard).toBeGreaterThan(firstAllow)
@@ -77,11 +94,54 @@ describe("renderTemplates", () => {
     cfg.agents.qa.permissions = [rule]
     const qa = renderTemplates(cfg).find((r) => r.fileName === "qa.md")?.content ?? ""
     const qaTwin = renderTemplates(cfg).find((r) => r.fileName === "qa-fallback.md")?.content ?? ""
-    expect(qa).toContain('resource: "vm/vm-ssh.sh *"')
-    expect(qaTwin).toContain('resource: "vm/vm-ssh.sh *"')
+    expect(qa).toContain('"vm/vm-ssh.sh *": allow')
+    expect(qaTwin).toContain('"vm/vm-ssh.sh *": allow')
     expect(qa).not.toContain("PERMISSION_OVERRIDES")
     // overlay rules precede the template's final destructive guards
-    expect(qa.indexOf('resource: "vm/vm-ssh.sh *"')).toBeLessThan(qa.indexOf("rm -rf /"))
+    expect(qa.indexOf('"vm/vm-ssh.sh *": allow')).toBeLessThan(qa.indexOf('"rm -rf /": deny'))
+  })
+
+  it("collapses a repeated resource to its last effect (overlay overrides a base rule)", () => {
+    const cfg = defaultConfig("global")
+    // The qa template gates all shell behind `"*": ask`; a broad allow must win.
+    cfg.agents.qa.permissions = [{ action: "shell", resource: "*", effect: "allow" }]
+    const qa = renderTemplates(cfg).find((r) => r.fileName === "qa.md")?.content ?? ""
+    const bashGroup = qa.slice(qa.indexOf("\n  bash:\n"), qa.indexOf("\n  edit:\n"))
+    expect(bashGroup).toContain('"*": allow')
+    expect(bashGroup).not.toContain('"*": ask')
+  })
+
+  it("renders modifyRoots as edit allows after the base edit gate", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.qa.modifyRoots = ["."]
+    const qa = renderTemplates(cfg).find((r) => r.fileName === "qa.md")?.content ?? ""
+    const editGroup = qa.slice(qa.indexOf("\n  edit:\n"), qa.indexOf("\n  external_directory:\n"))
+    const gate = editGroup.indexOf('"*": ask')
+    const allow = editGroup.indexOf('"**": allow')
+    expect(gate).toBeGreaterThan(-1)
+    expect(allow).toBeGreaterThan(gate)
+  })
+
+  it("maps modifyRoots directories to relative globs and applies them to the twin", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.qa.modifyRoots = ["src", "./tests/"]
+    const files = renderTemplates(cfg)
+    const qa = files.find((r) => r.fileName === "qa.md")?.content ?? ""
+    const twin = files.find((r) => r.fileName === "qa-fallback.md")?.content ?? ""
+    for (const content of [qa, twin]) {
+      expect(content).toContain('"src/**": allow')
+      expect(content).toContain('"tests/**": allow')
+    }
+  })
+
+  it("lets an explicit permissions rule override a modifyRoots allow", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.qa.modifyRoots = ["."]
+    cfg.agents.qa.permissions = [{ action: "edit", resource: "**", effect: "deny" }]
+    const qa = renderTemplates(cfg).find((r) => r.fileName === "qa.md")?.content ?? ""
+    const editGroup = qa.slice(qa.indexOf("\n  edit:\n"), qa.indexOf("\n  external_directory:\n"))
+    expect(editGroup).toContain('"**": deny')
+    expect(editGroup).not.toContain('"**": allow')
   })
 
   it("renders twins as subagent-only and visible by default", () => {
