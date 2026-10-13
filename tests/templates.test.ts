@@ -50,4 +50,31 @@ describe("renderTemplates", () => {
       expect(normalize(twin)).toBe(normalize(primary))
     }
   })
+
+  it("removes the override slot when no permissions are configured", () => {
+    for (const r of rendered) expect(r.content).not.toContain("PERMISSION_OVERRIDES")
+  })
+
+  it("keeps the qa shell gate before its allows, and the guards last", () => {
+    const lines = (rendered.find((r) => r.fileName === "qa.md")?.content ?? "").split("\n")
+    const gate = lines.findIndex((l) => l.includes("action: shell") && l.includes('resource: "*"') && l.includes("ask"))
+    const firstAllow = lines.findIndex((l) => l.includes('resource: "ls *"'))
+    const guard = lines.findIndex((l) => l.includes('resource: "rm -rf /"'))
+    expect(gate).toBeGreaterThan(-1)
+    expect(firstAllow).toBeGreaterThan(gate)
+    expect(guard).toBeGreaterThan(firstAllow)
+  })
+
+  it("injects configured overlays into both the agent and its twin, before the guards", () => {
+    const cfg = defaultConfig("global")
+    const rule = { action: "shell", resource: "vm/vm-ssh.sh *", effect: "allow" as const }
+    cfg.agents.qa.permissions = [rule]
+    const qa = renderTemplates(cfg).find((r) => r.fileName === "qa.md")?.content ?? ""
+    const qaTwin = renderTemplates(cfg).find((r) => r.fileName === "qa-fallback.md")?.content ?? ""
+    expect(qa).toContain('resource: "vm/vm-ssh.sh *"')
+    expect(qaTwin).toContain('resource: "vm/vm-ssh.sh *"')
+    expect(qa).not.toContain("PERMISSION_OVERRIDES")
+    // overlay rules precede the template's final destructive guards
+    expect(qa.indexOf('resource: "vm/vm-ssh.sh *"')).toBeLessThan(qa.indexOf("rm -rf /"))
+  })
 })

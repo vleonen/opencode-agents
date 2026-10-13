@@ -7,6 +7,8 @@ permissions:
   - {action: external_directory, resource: "*", effect: allow}
   # V1 `tools: bash: false` — reviewer never runs shell commands:
   - {action: shell, resource: "*", effect: deny}
+  # --- project/user permission overlays (rendered from opencode-agents.json) ---
+  # {{PERMISSION_OVERRIDES}}
   # NOTE: file edits remain allowed via the base policy (matches old behavior).
   # To make the reviewer strictly read-only, add:
   # - {action: edit, resource: "*", effect: deny}

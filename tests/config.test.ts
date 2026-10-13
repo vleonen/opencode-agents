@@ -45,6 +45,28 @@ describe("config", () => {
     ).toBeNull()
   })
 
+  it("parses and preserves permission overlays, dropping malformed rules", () => {
+    const c = parseConfig({
+      scope: "project",
+      agents: {
+        designer: { model: "a/b", fallback: "c/d" },
+        reviewer: { model: "a/b", fallback: "c/d" },
+        qa: {
+          model: "a/b",
+          fallback: "c/d",
+          permissions: [
+            { action: "shell", resource: "vm/vm-ssh.sh *", effect: "allow" },
+            { action: "shell", resource: "x", effect: "nope" },
+            { action: "", resource: "y", effect: "ask" },
+            "not-an-object",
+          ],
+        },
+      },
+    })
+    expect(c?.agents.qa.permissions).toEqual([{ action: "shell", resource: "vm/vm-ssh.sh *", effect: "allow" }])
+    expect(c?.agents.designer.permissions).toEqual([])
+  })
+
   it("reads and writes a file", () => {
     const dir = tmp()
     const file = path.join(dir, "opencode-agents.json")

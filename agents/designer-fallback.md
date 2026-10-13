@@ -12,6 +12,8 @@ permissions:
   - action: subagent
     resource: "*"
     effect: deny
+  # --- project/user permission overlays (rendered from opencode-agents.json) ---
+  # {{PERMISSION_OVERRIDES}}
 ---
 
 You are the software designer agent for this repository. Your job is to

@@ -83,10 +83,37 @@ choices.
   "agents": {
     "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
-    "qa":       { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash" }
+    "qa": {
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "fallback": "deepseek/deepseek-flash",
+      "permissions": [
+        { "action": "shell", "resource": "vm/vm-ssh.sh *", "effect": "allow" },
+        { "action": "shell", "resource": "rm -rf /", "effect": "deny" }
+      ]
+    }
   }
 }
 ```
+
+### Permission overlays
+
+`permissions` (optional, default `[]`) appends project/user rules to the bundled
+template's `{{PERMISSION_OVERRIDES}}` slot — after the template's allow rules and
+before its final destructive guards — for **both** the agent and its `-fallback`
+twin. Because permission evaluation is last-match-wins, overlay rules override
+the template's allows, while the template guards still win. Malformed rules are
+dropped defensively.
+
+This is the supported way for a project to declare its own agent rules: put them
+in a project-scoped `opencode-agents.json` (`--scope project`) and they are
+re-rendered into the owned agent files on every install/heal, so an upgrade never
+loses them. `opencode-agents uninstall` also never removes or rewrites anything
+outside the files it owns.
+
+A project can alternatively use native OpenCode config
+(`<project>/.opencode/opencode.jsonc` with `agents.<id>.permissions`), which this
+tool never touches; that is equivalent for permission rules but cannot be applied
+to the twin without a second entry.
 
 ## Scopes
 

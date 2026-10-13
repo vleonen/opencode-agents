@@ -9,11 +9,22 @@ export type Role = (typeof ROLES)[number]
 
 export const CONFIG_VERSION = 1
 
+export type PermissionEffect = "allow" | "ask" | "deny"
+
+/** Extra permission rules appended to an agent's template; last match wins. */
+export interface PermissionRule {
+  action: string
+  resource: string
+  effect: PermissionEffect
+}
+
 export interface AgentChoice {
   /** Model for the primary agent, `provider/model` (optional `#variant`). */
   model: string
   /** Model for the fallback twin. */
   fallback: string
+  /** Project/user rules rendered into the template's override slot (never overwritten by upgrades). */
+  permissions: PermissionRule[]
 }
 
 export interface AgentsConfig {
@@ -22,12 +33,30 @@ export interface AgentsConfig {
   agents: Record<Role, AgentChoice>
 }
 
+const PERMISSION_EFFECTS = new Set<PermissionEffect>(["allow", "ask", "deny"])
+
+/** Defensive parse: keep well-formed rules, drop the rest. */
+function parsePermissions(raw: unknown): PermissionRule[] {
+  if (!Array.isArray(raw)) return []
+  const out: PermissionRule[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const action = nonEmptyString(item.action)
+    const resource = typeof item.resource === "string" ? item.resource : undefined
+    const effect = item.effect
+    if (!action || resource === undefined || typeof effect !== "string") continue
+    if (!PERMISSION_EFFECTS.has(effect as PermissionEffect)) continue
+    out.push({ action, resource, effect: effect as PermissionEffect })
+  }
+  return out
+}
+
 /** Built-in recommendations, keyed off the primary provider (z.ai) and a different-provider twin. */
 export function defaultChoices(): Record<Role, AgentChoice> {
   return {
-    designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro" },
-    reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro" },
-    qa: { model: "zai-coding-plan/glm-5.3-flash", fallback: "deepseek/deepseek-flash" },
+    designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [] },
+    reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [] },
+    qa: { model: "zai-coding-plan/glm-5.3-flash", fallback: "deepseek/deepseek-flash", permissions: [] },
   }
 }
 
@@ -51,7 +80,7 @@ export function parseConfig(data: unknown): AgentsConfig | null {
     const model = nonEmptyString(raw.model)
     const fallback = nonEmptyString(raw.fallback)
     if (!model || !fallback) return null
-    agents[role] = { model, fallback }
+    agents[role] = { model, fallback, permissions: parsePermissions(raw.permissions) }
   }
   const version = typeof data.version === "number" && Number.isFinite(data.version) ? data.version : CONFIG_VERSION
   return { version, scope, agents }
