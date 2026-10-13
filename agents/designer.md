@@ -3,11 +3,12 @@ description: "Software designer. Turns a feature request, finding, or bug report
 mode: all
 model: {{MODEL}}
 permissions:
+  # --- project/user permission overlays (rendered from opencode-agents.json) ---
+  # {{PERMISSION_OVERRIDES}}
+  # --- read-only guards LAST so no overlay can grant edit/shell/subagent ---
   - {action: "edit", resource: "*", effect: deny}
   - {action: "shell", resource: "*", effect: deny}
   - {action: "subagent", resource: "*", effect: deny}
-  # --- project/user permission overlays (rendered from opencode-agents.json) ---
-  # {{PERMISSION_OVERRIDES}}
 ---
 
 You are the software designer agent for this repository. Your job is to

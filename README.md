@@ -172,10 +172,12 @@ therefore only advisable when you trigger the twin through a command.
 ### Permission overlays
 
 `permissions` (optional, default `[]`) appends project/user rules to the bundled
-template's `{{PERMISSION_OVERRIDES}}` slot — after the template's allow rules and
-before its final destructive guards — for **both** the agent and its `-fallback`
-twin. Because permission evaluation is last-match-wins, overlay rules override
-the template's allows, while the template guards still win. Malformed rules are
+template's `{{PERMISSION_OVERRIDES}}` slot — after the template's base rules and
+before its final guards — for **both** the agent and its `-fallback` twin.
+Because permission evaluation is last-match-wins, overlay rules override the
+template's base allows, while the template **guards still win**: the `designer`
+is always denied `edit`/`shell`/`subagent`, and the `reviewer` is always denied
+`shell`; no overlay or `modifyRoots` entry can grant those. Malformed rules are
 dropped defensively.
 
 Rules use the V2 shape `{ "action", "resource", "effect" }` in
@@ -204,7 +206,9 @@ to the twin without a second entry.
 the installer renders it as an `edit` allow rule (`"src"` → `"src/**"`), and `.`
 means the whole project (`"**"`). Entries render before the `permissions`
 overlays, so an explicit `permissions` rule wins on conflict, and like
-`permissions` they apply to both the agent and its `-fallback` twin.
+`permissions` they apply to both the agent and its `-fallback` twin. On the
+read-only `designer`, `modifyRoots` is moot (its edit guard wins) and the CLI
+warns — use `qa` (or another role) for edit autonomy.
 
 ```json
 {

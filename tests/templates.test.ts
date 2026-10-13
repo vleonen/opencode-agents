@@ -144,6 +144,30 @@ describe("renderTemplates", () => {
     expect(editGroup).not.toContain('"**": allow')
   })
 
+  it("keeps the designer read-only: its denies are guards after an edit grant", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.designer.modifyRoots = ["."]
+    cfg.agents.designer.permissions = [{ action: "edit", resource: "**", effect: "allow" }]
+    const designer = renderTemplates(cfg).find((r) => r.fileName === "designer.md")?.content ?? ""
+    const editGroup = designer.slice(designer.indexOf("\n  edit:\n"), designer.indexOf("\n  bash:\n"))
+    const allow = editGroup.indexOf('"**": allow')
+    const deny = editGroup.indexOf('"*": deny')
+    expect(allow).toBeGreaterThan(-1)
+    // The guard `"*": deny` is last, so last-match-wins keeps the designer read-only.
+    expect(deny).toBeGreaterThan(allow)
+  })
+
+  it("keeps the reviewer shell-denied even when an overlay grants it", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.reviewer.permissions = [{ action: "shell", resource: "**", effect: "allow" }]
+    const reviewer = renderTemplates(cfg).find((r) => r.fileName === "reviewer.md")?.content ?? ""
+    const bashGroup = reviewer.slice(reviewer.indexOf("\n  bash:\n"), reviewer.indexOf("\n---\n"))
+    const allow = bashGroup.indexOf('"**": allow')
+    const deny = bashGroup.indexOf('"*": deny')
+    expect(allow).toBeGreaterThan(-1)
+    expect(deny).toBeGreaterThan(allow)
+  })
+
   it("renders twins as subagent-only and visible by default", () => {
     for (const role of ["designer", "qa", "reviewer"] as const) {
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""

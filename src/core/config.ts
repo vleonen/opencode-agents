@@ -153,6 +153,11 @@ export function configWarnings(config: AgentsConfig): string[] {
         )
       }
     }
+    if (role === "designer" && choice.modifyRoots.length > 0) {
+      out.push(
+        "designer: modifyRoots is ignored — the designer is read-only (its edit/shell/subagent denies are non-overridable guards)",
+      )
+    }
     const { model, fallback } = choice
     if (fallback === undefined) {
       if (choice.twinMode !== "subagent" || choice.twinHidden) {

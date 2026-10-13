@@ -5,10 +5,10 @@ model: {{MODEL}}
 permissions:
   # V1 `permission: allow` allowed external-directory reads without prompting — preserved:
   - {action: external_directory, resource: "*", effect: allow}
-  # V1 `tools: bash: false` — reviewer never runs shell commands:
-  - {action: shell, resource: "*", effect: deny}
   # --- project/user permission overlays (rendered from opencode-agents.json) ---
   # {{PERMISSION_OVERRIDES}}
+  # --- guard LAST so no overlay can grant shell to the reviewer ---
+  - {action: shell, resource: "*", effect: deny}
   # NOTE: file edits remain allowed via the base policy (matches old behavior).
   # To make the reviewer strictly read-only, add:
   #   edit:

@@ -103,6 +103,12 @@ describe("config", () => {
     expect(parseConfig(JSON.parse(JSON.stringify(c)))).toEqual(c)
   })
 
+  it("warns that modifyRoots is ignored on the read-only designer", () => {
+    const c = defaultConfig("global")
+    c.agents.designer.modifyRoots = ["."]
+    expect(configWarnings(c).some((w) => w.startsWith("designer:") && w.includes("read-only"))).toBe(true)
+  })
+
   it("warns when a modifyRoots entry is absolute or home-anchored", () => {
     const c = defaultConfig("global")
     c.agents.qa.modifyRoots = ["/home/x/proj", "~/dev", "src"]
