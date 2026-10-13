@@ -131,7 +131,7 @@ export function configWarnings(config: AgentsConfig): string[] {
     }
     if (config.agents[role].twinHidden) {
       out.push(
-        `${role}: twinHidden is set — OpenCode may drop a hidden agent from the subagent catalog, breaking the fallback; prefer twinMode: "subagent"`,
+        `${role}: twinHidden is set — OpenCode drops hidden agents from the subagent catalog, breaking the automatic fallback; leave twinHidden false (twinMode: "subagent" already hides the twin from selection)`,
       )
     }
   }

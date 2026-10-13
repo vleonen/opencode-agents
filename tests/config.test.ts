@@ -94,6 +94,20 @@ describe("config", () => {
     expect(configWarnings(c).some((w) => w.includes("twinHidden"))).toBe(true)
   })
 
+  it("strictly types twinMode and twinHidden", () => {
+    const c = parseConfig({
+      scope: "global",
+      agents: {
+        designer: { model: "a/b", fallback: "c/d", twinMode: 5, twinHidden: "true" },
+        reviewer: { model: "a/b", fallback: "c/d", twinMode: "subagent", twinHidden: 0 },
+        qa: { model: "a/b", fallback: "c/d" },
+      },
+    })
+    expect(c?.agents.designer.twinMode).toBe("subagent")
+    expect(c?.agents.designer.twinHidden).toBe(false)
+    expect(c?.agents.reviewer.twinHidden).toBe(false)
+  })
+
   it("reads and writes a file", () => {
     const dir = tmp()
     const file = path.join(dir, "opencode-agents.json")

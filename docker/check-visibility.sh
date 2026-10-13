@@ -29,7 +29,9 @@ TWINS=(designer-fallback qa-fallback reviewer-fallback)
 cd "$REPO_DIR"
 [ -d node_modules ] || npm ci --silent >/dev/null 2>&1 || npm install --silent >/dev/null
 bash "$DOCKER_DIR/bundle.sh" >/dev/null
-$COMPOSE up -d --force-recreate --build v2-subagent v2-hidden >/dev/null
+# Build here so the script is self-contained (the v2 services share this image).
+$COMPOSE build >/dev/null
+$COMPOSE up -d --force-recreate v2-subagent v2-hidden >/dev/null
 
 svc_port() { case "$1" in v2-subagent) echo 15297 ;; v2-hidden) echo 15298 ;; esac; }
 
@@ -118,8 +120,28 @@ run_variant() { # run_variant <service> <expect-hidden:true|false>
     bad "$svc agents attachment spawns a child session"
   fi
 
-  wait_log "$svc" 'context-subagent-tool' || true
-  local catalog; catalog=$($COMPOSE logs "$svc" 2>&1 | grep 'context-subagent-tool' | tail -1 || true)
+  # Wait for a complete catalog line (the always-visible primaries present) so a
+  # partially flushed or child-session line cannot mask the twin list. Then take
+  # the union of every dump line (a later child context can carry subagent: null).
+  local catalog=""
+  for _ in $(seq 1 30); do
+    catalog=$($COMPOSE logs "$svc" 2>&1 | grep 'context-subagent-tool' || true)
+    if printf '%s' "$catalog" | grep -q 'Available subagents' \
+      && printf '%s' "$catalog" | grep -q 'designer:' \
+      && printf '%s' "$catalog" | grep -q 'qa:' \
+      && printf '%s' "$catalog" | grep -q 'reviewer:'; then
+      break
+    fi
+    sleep 2
+  done
+
+  # Prove the catalog was actually materialized before asserting anything about
+  # it, otherwise an empty/absent dump would masquerade as "twins dropped".
+  if ! printf '%s' "$catalog" | grep -q 'Available subagents'; then
+    bad "$svc model-facing subagent catalog not captured (probe/log missing)"
+    return
+  fi
+
   local listed=""
   for twin in "${TWINS[@]}"; do
     if printf '%s' "$catalog" | grep -q "$twin:"; then listed="$listed $twin"; fi

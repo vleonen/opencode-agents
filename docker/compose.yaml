@@ -12,6 +12,10 @@
 name: opencode-agents-verify
 
 x-v2-base: &v2-base
+  build:
+    context: .
+    target: base
+    dockerfile: Dockerfile
   image: opencode-agents-verify
   init: true
   working_dir: /workspace
