@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Contributor guide for the `opencode-agents` repo: an OpenCode **plugin + CLI** that
-installs six agent files (`designer`, `qa`, `reviewer` + `-fallback` twins) into a
-global or project scope and merges a fallback policy block into `AGENTS.md`.
+installs up to six agent files (`designer`, `qa`, `reviewer` and, per role, an
+optional `-fallback` twin) into a global or project scope and merges a fallback
+policy block into `AGENTS.md`.
 
 Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 `README.md` is the user-facing reference; keep it in sync when behavior changes.
@@ -25,7 +26,7 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 |---|---|
 | `src/index.ts` | Plugin entrypoint — loaded **directly** by OpenCode, not bundled. |
 | `bin/init.ts` | CLI (`init` / `inspect` / `uninstall`); bundled to `dist/bin.mjs`. |
-| `src/core/` | Install/uninstall/inspect, scopes, config parse, policy merge, manifest, templates. |
+| `src/core/` | Install/uninstall/inspect, scopes, config parse, policy render + merge, manifest, templates. |
 | `agents/`, `AGENTS.agents.md` | Template sources (see above). |
 | `docker/` | Verification harnesses (not shipped). |
 | `tests/` | Vitest; each test isolates via a temp `OPENCODE_CONFIG_DIR`. |
@@ -73,9 +74,14 @@ bash docker/check-visibility.sh  # twin mode/hidden behavior on v2
 - The policy block is delimited by `<!-- BEGIN opencode-agents -->` /
   `<!-- END opencode-agents -->`; `upsertPolicy`/`stripPolicy` must stay idempotent and
   repair malformed or duplicated markers without data loss.
-- A role may be **primary-only** (no `fallback`): it renders no `-fallback.md`, is
-  omitted from the policy table, and an old twin is reported `orphaned` (left on disk).
-  `--set <role>.fallback=` clears the fallback.
+- A role may be **primary-only** (no `fallback`): `renderTemplates` omits its
+  `-fallback.md`, `renderPolicy` drops it from the policy table and rules, and an old
+  twin is reported `orphaned` and left on disk — still a live `mode: subagent` agent,
+  reused when a fallback is set again. `--set <role>.fallback=` clears it;
+  `twinMode`/`twinHidden` are ignored (warned) without a fallback.
+- `install` derives the `AGENTS.md` policy from the config via `renderPolicy`
+  (`{{FALLBACK_TABLE_ROWS}}`/`{{FALLBACK_RULES}}`); when no role has a fallback it
+  removes the block instead of writing an empty one.
 - `AGENTS.agents.md` is a **build-time policy template**, not an auto-loaded
   instruction file. OpenCode V2 loads only `AGENTS.md`; `instructions` entries are not
   resolved.
