@@ -60,7 +60,7 @@ opencode-agents uninstall            # remove owned files + policy + config
 |---|---|
 | `--scope global\|project` | Install target (default: existing config's scope, else `global`). |
 | `--dir <path>` | Project directory for `--scope project` (default: cwd). |
-| `--set <agent>[.<field>]=<model>` | Set a model. `<field>` is `model`/`primary` (default) or `fallback`. |
+| `--set <agent>[.<field>]=<model>` | Set a model. `<field>` is `model`/`primary` (default) or `fallback`. An empty `fallback` (e.g. `--set qa.fallback=`) clears the twin, making the agent primary-only. |
 | `--config <file>` | Base JSON config to start from. |
 | `--yes`, `-y`, `--non-interactive` | Never prompt; use defaults / flags. |
 | `--force` | Overwrite files not owned by opencode-agents. |
@@ -83,16 +83,23 @@ choices.
   "agents": {
     "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
-    "qa": {
-      "model": "zai-coding-plan/glm-5.3-flash",
-      "fallback": "deepseek/deepseek-flash",
-      "permissions": [
-        { "action": "shell", "resource": "vm/vm-ssh.sh *", "effect": "allow" },
-        { "action": "shell", "resource": "rm -rf /", "effect": "deny" }
-      ],
-      "twinMode": "subagent",
-      "twinHidden": false
-    }
+    "qa": { "model": "zai-coding-plan/glm-5.3-flash" }
+  }
+}
+```
+
+`fallback` is optional: omit it (or set it empty) for a **primary-only** agent.
+Such a role renders only its primary agent, is omitted from the `AGENTS.md`
+policy table, and an already-installed twin is left in place and reported
+`orphaned` (so you can set a fallback again later and it is reused). `twinMode`
+and `twinHidden` are ignored without a fallback.
+
+```json
+{
+  "agents": {
+    "qa": { "model": "zai-coding-plan/glm-5.3-flash", "permissions": [
+      { "action": "shell", "resource": "vm/vm-ssh.sh *", "effect": "allow" }
+    ] }
   }
 }
 ```

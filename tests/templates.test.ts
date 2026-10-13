@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { defaultConfig } from "../src/core/config"
-import { renderTemplates } from "../src/core/templates"
+import { renderPolicy, renderTemplates } from "../src/core/templates"
 
 describe("renderTemplates", () => {
   const rendered = renderTemplates(defaultConfig("global"))
@@ -102,5 +102,30 @@ describe("renderTemplates", () => {
     const twin = renderTemplates(cfg).find((r) => r.fileName === "qa-fallback.md")?.content ?? ""
     expect(twin).toContain("mode: all")
     expect(twin).toContain("hidden: true")
+  })
+
+  it("omits the twin for a primary-only agent", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.qa.fallback = undefined
+    const files = renderTemplates(cfg).map((r) => r.fileName)
+    expect(files).toContain("qa.md")
+    expect(files).not.toContain("qa-fallback.md")
+    expect(files).toHaveLength(5)
+  })
+
+  it("renders the policy only for roles that have a fallback", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.qa.fallback = undefined
+    const policy = renderPolicy(cfg)
+    expect(policy).toContain("| `designer` | `designer-fallback` |")
+    expect(policy).toContain("| `reviewer` | `reviewer-fallback` |")
+    expect(policy).not.toContain("qa-fallback")
+    expect(policy).not.toContain("{{")
+  })
+
+  it("renders an empty policy when no role has a fallback", () => {
+    const cfg = defaultConfig("global")
+    for (const role of ["designer", "qa", "reviewer"] as const) cfg.agents[role].fallback = undefined
+    expect(renderPolicy(cfg)).toBe("")
   })
 })

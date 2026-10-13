@@ -93,6 +93,36 @@ describe("install", () => {
     const next = install({ config, env })
     expect(next.files.find((f) => f.fileName === "designer.md")?.action).toBe("updated")
   })
+
+  it("creates five files for a primary-only role", () => {
+    const { env } = globalEnv()
+    const config = defaultConfig("global")
+    config.agents.qa.fallback = undefined
+    const report = install({ config, env })
+    expect(report.files).toHaveLength(5)
+    const t = resolveTargets({ scope: "global", env })
+    expect(fs.existsSync(path.join(t.agentDir, "qa-fallback.md"))).toBe(false)
+  })
+
+  it("orphans a twin when its fallback is cleared and drops it from the policy", () => {
+    const { env } = globalEnv()
+    const config = defaultConfig("global")
+    install({ config, env })
+    const t = resolveTargets({ scope: "global", env })
+
+    config.agents.qa.fallback = undefined
+    const report = install({ config, env })
+
+    // The twin file stays on disk, is reported orphaned, and is not rewritten.
+    expect(report.orphaned).toContain("qa-fallback.md")
+    expect(fs.existsSync(path.join(t.agentDir, "qa-fallback.md"))).toBe(true)
+    expect(report.files.some((f) => f.fileName === "qa-fallback.md")).toBe(false)
+
+    // The policy no longer references the removed twin.
+    const agentsMd = fs.readFileSync(t.agentsMdPath, "utf8")
+    expect(agentsMd).not.toContain("qa-fallback")
+    expect(agentsMd).toContain("designer-fallback")
+  })
 })
 
 describe("uninstall", () => {

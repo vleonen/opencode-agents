@@ -40,9 +40,31 @@ describe("config", () => {
     expect(
       parseConfig({
         scope: "global",
-        agents: { designer: { model: "a/b", fallback: "c/d" }, qa: { model: "a/b" }, reviewer: { model: "a/b", fallback: "c/d" } },
+        agents: { designer: { model: "a/b", fallback: "c/d" }, qa: { fallback: "c/d" }, reviewer: { model: "a/b", fallback: "c/d" } },
       }),
     ).toBeNull()
+  })
+
+  it("supports a primary-only agent (missing/empty fallback)", () => {
+    const c = parseConfig({
+      scope: "global",
+      agents: {
+        designer: { model: "a/b" },
+        reviewer: { model: "a/b", fallback: "" },
+        qa: { model: "a/b", fallback: "c/d" },
+      },
+    })
+    expect(c).not.toBeNull()
+    expect(c?.agents.designer.fallback).toBeUndefined()
+    expect(c?.agents.reviewer.fallback).toBeUndefined()
+    expect(c?.agents.qa.fallback).toBe("c/d")
+  })
+
+  it("warns when twin knobs are set without a fallback", () => {
+    const c = defaultConfig("global")
+    c.agents.qa.fallback = undefined
+    c.agents.qa.twinHidden = true
+    expect(configWarnings(c).some((w) => w.includes("ignored because no fallback"))).toBe(true)
   })
 
   it("parses and preserves permission overlays, dropping malformed rules", () => {

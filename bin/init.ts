@@ -14,6 +14,7 @@
  *                             set a model; field is `model`/`primary` (default) or `fallback`
  *                             e.g. --set designer=zai-coding-plan/glm-5.3
  *                                  --set designer.fallback=deepseek/deepseek-v4-pro
+ *                                  --set designer.fallback=   (clears the twin: primary-only)
  *   --config <file>           base JSON config to start from
  *   --yes, -y                 accept defaults without prompting
  *   --non-interactive         never prompt (same as --yes)
@@ -68,7 +69,8 @@ function usage(): string {
     "Options:",
     "  --scope global|project    install target (default: global)",
     "  --dir <path>              project directory for --scope project (default: cwd)",
-    "  --set <agent>[.<field>]=<model>   field: model|primary (default) or fallback",
+    "  --set <agent>[.<field>]=<model>   field: model|primary (default) or fallback;",
+    "                                    an empty fallback clears the twin (primary-only agent)",
     "  --config <file>           base JSON config",
     "  --yes, -y                 accept defaults, no prompts",
     "  --non-interactive         never prompt",
@@ -157,16 +159,21 @@ function applySet(config: AgentsConfig, expr: string): void {
   if (eq < 0) throw new Error(`--set expects <agent>[.<field>]=<model> (got "${expr}")`)
   const key = expr.slice(0, eq).trim()
   const value = expr.slice(eq + 1).trim()
-  if (value === "") throw new Error(`--set has an empty model (got "${expr}")`)
   const parts = key.split(".")
   if (parts.length > 2) throw new Error(`--set key has too many segments (expected <agent> or <agent>.<field>): ${key}`)
   const [rolePart, fieldPart] = parts
   if (!rolePart || !isRole(rolePart)) throw new Error(`--set references an unknown agent: ${key}`)
   const role: Role = rolePart
   const field = fieldPart ?? "model"
-  if (field === "model" || field === "primary") config.agents[role].model = value
-  else if (field === "fallback") config.agents[role].fallback = value
-  else throw new Error(`--set field must be model|primary|fallback (got "${field}")`)
+  if (field === "model" || field === "primary") {
+    if (value === "") throw new Error(`--set ${field} needs a model (got "${expr}")`)
+    config.agents[role].model = value
+  } else if (field === "fallback") {
+    // An empty value clears the fallback, making the agent primary-only.
+    config.agents[role].fallback = value === "" ? undefined : value
+  } else {
+    throw new Error(`--set field must be model|primary|fallback (got "${field}")`)
+  }
 }
 
 /** Registered models from the running opencode, as `provider/model`. */
@@ -207,10 +214,12 @@ async function pick(
   label: string,
   models: string[],
   current: string,
+  allowNone = false,
 ): Promise<string> {
   for (;;) {
     const ans = (await rl.question(`${label} [${current}]: `)).trim()
-    if (ans === "") return current
+    if (ans === "") return current === "none" ? "" : current
+    if (allowNone && /^(none|no|-)$/i.test(ans)) return ""
     if (/^\d+$/.test(ans)) {
       const idx = Number(ans)
       if (models.length > 0 && idx >= 1 && idx <= models.length) return models[idx - 1] as string
@@ -218,7 +227,11 @@ async function pick(
       continue
     }
     if (ans.includes("/")) return ans
-    process.stdout.write("  ! enter a list number, a provider/model, or blank to keep the default\n")
+    process.stdout.write(
+      allowNone
+        ? "  ! enter a list number, a provider/model, `none`, or blank to keep\n"
+        : "  ! enter a list number, a provider/model, or blank to keep the default\n",
+    )
   }
 }
 
@@ -230,14 +243,15 @@ async function promptModels(config: AgentsConfig): Promise<void> {
   }
   process.stdout.write("\nAvailable models:\n")
   printModels(models)
-  process.stdout.write("\nPress Enter to accept the default in brackets.\n\n")
+  process.stdout.write("\nPress Enter to accept the default in brackets; type `none` to remove a fallback.\n\n")
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   try {
     for (const role of ROLES) {
       const choice = config.agents[role]
       choice.model = await pick(rl, `${role} model`, models, choice.model)
-      choice.fallback = await pick(rl, `${role} fallback`, models, choice.fallback)
+      const fallback = await pick(rl, `${role} fallback`, models, choice.fallback ?? "none", true)
+      choice.fallback = fallback === "" ? undefined : fallback
     }
   } finally {
     rl.close()
@@ -245,7 +259,13 @@ async function promptModels(config: AgentsConfig): Promise<void> {
   process.stdout.write("\n")
 }
 
-function printReport(title: string, targets: Targets, files: FileAction[], policy: string): void {
+function printReport(
+  title: string,
+  targets: Targets,
+  files: FileAction[],
+  policy: string,
+  orphaned: string[] = [],
+): void {
   process.stdout.write(`${title} — scope ${targets.scope}\n`)
   process.stdout.write(`  agents dir : ${targets.agentDir}\n`)
   process.stdout.write(`  AGENTS.md  : ${targets.agentsMdPath}\n`)
@@ -253,6 +273,9 @@ function printReport(title: string, targets: Targets, files: FileAction[], polic
   for (const f of files) {
     const extra = f.reason ? `  (${f.reason})` : ""
     process.stdout.write(`  ${f.action.padEnd(9)} ${f.fileName}${extra}\n`)
+  }
+  for (const file of orphaned) {
+    process.stdout.write(`  ${"orphaned".padEnd(9)} ${file}  (kept; no fallback configured)\n`)
   }
   process.stdout.write(`  policy: ${policy}\n`)
 }
@@ -266,6 +289,9 @@ function printInspectReport(report: ReturnType<typeof inspect>): void {
     process.stdout.write(
       `  ${e.action.padEnd(9)} ${e.fileName}  (exists=${e.exists} owned=${e.owned})\n`,
     )
+  }
+  for (const file of report.orphaned) {
+    process.stdout.write(`  ${"orphaned".padEnd(9)} ${file}  (kept; no fallback configured)\n`)
   }
   process.stdout.write(`  policy block present: ${report.policyPresent}\n`)
 }
@@ -345,7 +371,7 @@ async function run(): Promise<number> {
   const report = install(installOpts)
   // Persist the config only after the install succeeded.
   writeConfig(targets.configPath, config)
-  printReport("Install", report.targets, report.files, report.policy)
+  printReport("Install", report.targets, report.files, report.policy, report.orphaned)
   process.stdout.write(
     "\nVerify:  opencode debug agents | grep -E 'designer|qa|reviewer'\n",
   )

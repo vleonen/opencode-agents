@@ -1,6 +1,5 @@
-import { AGENT_TEMPLATES, type AgentTemplateKind } from "../generated/agents"
-import type { AgentChoice, AgentsConfig, PermissionRule, Role } from "./config"
-import { isRole } from "./config"
+import { AGENT_TEMPLATES, POLICY_TEMPLATE, type AgentTemplateKind } from "../generated/agents"
+import { ROLES, isRole, type AgentChoice, type AgentsConfig, type PermissionRule, type Role } from "./config"
 
 export interface RenderedAgent {
   fileName: string
@@ -38,17 +37,40 @@ function renderTwinSlots(content: string, choice: AgentChoice): string {
     .join(String(choice.twinHidden))
 }
 
-/** Substitute the chosen models, twin visibility, and permission overlays into the bundled templates. */
+/**
+ * Substitute the chosen models, twin visibility, and permission overlays into the
+ * bundled templates. A role with no fallback model renders only its primary
+ * agent (no `-fallback` twin).
+ */
 export function renderTemplates(config: AgentsConfig): RenderedAgent[] {
-  return AGENT_TEMPLATES.map((t) => {
+  return AGENT_TEMPLATES.flatMap((t) => {
     if (!isRole(t.role)) throw new Error(`unknown agent role in template: ${t.role}`)
     const choice = config.agents[t.role]
+    if (t.kind === "fallback" && choice.fallback === undefined) return []
     const token = t.kind === "primary" ? PRIMARY_TOKEN : FALLBACK_TOKEN
-    const model = t.kind === "primary" ? choice.model : choice.fallback
+    const model = t.kind === "primary" ? choice.model : (choice.fallback as string)
     let content = t.content.split(token).join(model)
     if (t.kind === "fallback") content = renderTwinSlots(content, choice)
     content = injectOverrides(content, choice.permissions)
     if (content.includes("{{")) throw new Error(`unsubstituted placeholder in template: ${t.fileName}`)
-    return { fileName: t.fileName, role: t.role, kind: t.kind, content }
+    return [{ fileName: t.fileName, role: t.role, kind: t.kind, content }]
   })
+}
+
+/** Roles that have a fallback twin configured. */
+export function rolesWithFallback(config: AgentsConfig): Role[] {
+  return ROLES.filter((role) => config.agents[role].fallback !== undefined)
+}
+
+/**
+ * Render the AGENTS.md policy from the config: only roles that actually have a
+ * fallback twin are listed. Returns an empty string when no role does (the
+ * installer then removes any previously written block).
+ */
+export function renderPolicy(config: AgentsConfig, template: string = POLICY_TEMPLATE): string {
+  const roles = rolesWithFallback(config)
+  if (roles.length === 0) return ""
+  const rows = roles.map((role) => `| \`${role}\` | \`${role}-fallback\` |`).join("\n")
+  const rules = roles.map((role) => `- ${role} -> ${role}-fallback`).join("\n")
+  return template.split("{{FALLBACK_TABLE_ROWS}}").join(rows).split("{{FALLBACK_RULES}}").join(rules)
 }

@@ -24,8 +24,8 @@ export interface PermissionRule {
 export interface AgentChoice {
   /** Model for the primary agent, `provider/model` (optional `#variant`). */
   model: string
-  /** Model for the fallback twin. */
-  fallback: string
+  /** Model for the fallback twin. Omit (or set empty) for a primary-only agent with no twin. */
+  fallback?: string
   /** Project/user rules rendered into the template's override slot (never overwritten by upgrades). */
   permissions: PermissionRule[]
   /** Mode for the fallback twin. Default `subagent`: excluded from the agent selector, still launchable. */
@@ -86,8 +86,8 @@ export function parseConfig(data: unknown): AgentsConfig | null {
   for (const role of ROLES) {
     const raw = isRecord(agentsRaw[role]) ? (agentsRaw[role] as Record<string, unknown>) : {}
     const model = nonEmptyString(raw.model)
-    const fallback = nonEmptyString(raw.fallback)
-    if (!model || !fallback) return null
+    if (!model) return null
+    const fallback = nonEmptyString(raw.fallback) ?? undefined
     const twinMode: TwinMode = raw.twinMode === "all" ? "all" : "subagent"
     const twinHidden = raw.twinHidden === true
     agents[role] = { model, fallback, permissions: parsePermissions(raw.permissions), twinMode, twinHidden }
@@ -121,7 +121,14 @@ function providerOf(ref: string): string {
 export function configWarnings(config: AgentsConfig): string[] {
   const out: string[] = []
   for (const role of ROLES) {
-    const { model, fallback } = config.agents[role]
+    const choice = config.agents[role]
+    const { model, fallback } = choice
+    if (fallback === undefined) {
+      if (choice.twinMode !== "subagent" || choice.twinHidden) {
+        out.push(`${role}: twinMode/twinHidden are ignored because no fallback model is set`)
+      }
+      continue
+    }
     if (model === fallback) {
       out.push(`${role}: fallback equals model (${model}) — the twin will hit the same limits`)
     } else if (providerOf(model) === providerOf(fallback)) {
@@ -129,7 +136,7 @@ export function configWarnings(config: AgentsConfig): string[] {
         `${role}: model and fallback share provider "${providerOf(model)}" — a provider-wide limit would fail both`,
       )
     }
-    if (config.agents[role].twinHidden) {
+    if (choice.twinHidden) {
       out.push(
         `${role}: twinHidden is set — OpenCode drops hidden agents from the subagent catalog, breaking the automatic fallback; leave twinHidden false (twinMode: "subagent" already hides the twin from selection)`,
       )

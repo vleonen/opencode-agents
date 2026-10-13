@@ -115,10 +115,8 @@ async function warnUnavailable(ctx: AgentsV2Context, config: AgentsConfig): Prom
     if (available.size === 0) return
     for (const role of ROLES) {
       const choice = config.agents[role]
-      const fields: Array<[string, string]> = [
-        ["model", choice.model],
-        ["fallback", choice.fallback],
-      ]
+      const fields: Array<[string, string]> = [["model", choice.model]]
+      if (choice.fallback !== undefined) fields.push(["fallback", choice.fallback])
       for (const [field, model] of fields) {
         const base = model.split("#")[0] ?? model
         if (!available.has(base)) {

@@ -1,15 +1,14 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { POLICY_TEMPLATE } from "../generated/agents"
-import type { AgentsConfig } from "./config"
+import { ROLES, type AgentsConfig } from "./config"
 import { mergePolicyFile, POLICY_BEGIN, stripPolicyFile } from "./docs"
 import { MANIFEST_NAME, readManifest, removeManifest, sha256, writeManifest } from "./manifest"
 import type { Env, Targets } from "./paths"
 import { resolveTargets } from "./paths"
-import { renderTemplates } from "./templates"
+import { renderPolicy, renderTemplates } from "./templates"
 
-export type FileActionKind = "created" | "updated" | "unchanged" | "skipped" | "removed" | "kept"
+export type FileActionKind = "created" | "updated" | "unchanged" | "skipped" | "removed" | "kept" | "orphaned"
 
 export interface FileAction {
   fileName: string
@@ -35,7 +34,15 @@ export interface InstallOptions {
 export interface InstallReport {
   targets: Targets
   files: FileAction[]
-  policy: "created" | "updated" | "unchanged" | "noop"
+  policy: "created" | "updated" | "unchanged" | "removed" | "noop"
+  /** Owned `-fallback.md` twins whose role no longer has a fallback (left in place). */
+  orphaned: string[]
+}
+
+function orphanedTwins(config: AgentsConfig, agentDir: string): string[] {
+  return ROLES.filter((role) => config.agents[role].fallback === undefined)
+    .map((role) => `${role}-fallback.md`)
+    .filter((file) => fs.existsSync(path.join(agentDir, file)))
 }
 
 function resolve(opts: { config: AgentsConfig; projectDir?: string; env?: Env; homedir?: string }): Targets {
@@ -115,10 +122,16 @@ export function install(opts: InstallOptions): InstallReport {
 
   let policy: InstallReport["policy"] = "noop"
   if (opts.writePolicy !== false) {
-    policy = mergePolicyFile(targets.agentsMdPath, opts.policyText ?? POLICY_TEMPLATE)
+    const text = opts.policyText ?? renderPolicy(opts.config)
+    if (text.trim() === "") {
+      // No role has a fallback: remove any previously written policy block.
+      policy = stripPolicyFile(targets.agentsMdPath) ? "removed" : "noop"
+    } else {
+      policy = mergePolicyFile(targets.agentsMdPath, text)
+    }
   }
 
-  return { targets, files, policy }
+  return { targets, files, policy, orphaned: orphanedTwins(opts.config, targets.agentDir) }
 }
 
 export interface UninstallOptions {
@@ -187,6 +200,8 @@ export interface InspectReport {
   entries: InspectEntry[]
   manifestPresent: boolean
   policyPresent: boolean
+  /** Owned `-fallback.md` twins whose role no longer has a fallback (left in place). */
+  orphaned: string[]
 }
 
 /** Dry run: report what install would do without touching the filesystem. */
@@ -217,5 +232,6 @@ export function inspect(opts: InstallOptions): InspectReport {
     entries,
     manifestPresent: fs.existsSync(path.join(targets.agentDir, MANIFEST_NAME)),
     policyPresent,
+    orphaned: orphanedTwins(opts.config, targets.agentDir),
   }
 }
