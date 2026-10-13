@@ -173,19 +173,26 @@ describe("renderTemplates", () => {
     expect(files).toHaveLength(5)
   })
 
-  it("renders the policy only for roles that have a fallback", () => {
+  it("always renders the agent roles; the fallback table lists only roles with a twin", () => {
     const cfg = defaultConfig("global")
     cfg.agents.qa.fallback = undefined
     const policy = renderPolicy(cfg)
+    expect(policy).toContain("## Agent roles")
+    expect(policy).toContain("### `designer`")
+    expect(policy).toContain("### `qa`")
+    expect(policy).toContain("### `reviewer`")
     expect(policy).toContain("| `designer` | `designer-fallback` |")
     expect(policy).toContain("| `reviewer` | `reviewer-fallback` |")
     expect(policy).not.toContain("qa-fallback")
     expect(policy).not.toContain("{{")
   })
 
-  it("renders an empty policy when no role has a fallback", () => {
+  it("renders the agent roles without the fallback section when no role has a fallback", () => {
     const cfg = defaultConfig("global")
     for (const role of ["designer", "qa", "reviewer"] as const) cfg.agents[role].fallback = undefined
-    expect(renderPolicy(cfg)).toBe("")
+    const policy = renderPolicy(cfg)
+    expect(policy).toContain("## Agent roles")
+    expect(policy).not.toContain("## Subagent model fallback")
+    expect(policy).not.toContain("{{")
   })
 })

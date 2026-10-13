@@ -51,6 +51,11 @@ check_files() { # check_files <service>
   else
     bad "$svc AGENTS.md policy block"
   fi
+  if $COMPOSE exec -T "$svc" grep -q '## Agent roles' /root/.config/opencode/AGENTS.md 2>/dev/null; then
+    ok "$svc AGENTS.md agent-roles guidance"
+  else
+    bad "$svc AGENTS.md agent-roles guidance"
+  fi
 }
 
 # Assert V1 actually applied the V1 `permission:` map (not just installed files).

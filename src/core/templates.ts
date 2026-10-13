@@ -159,15 +159,27 @@ export function rolesWithFallback(config: AgentsConfig): Role[] {
   return ROLES.filter((role) => config.agents[role].fallback !== undefined)
 }
 
+/** Separates the always-present role guidance from the optional fallback section. */
+const FALLBACK_SECTION_MARKER = "<!-- fallback-section -->"
+
 /**
- * Render the AGENTS.md policy from the config: only roles that actually have a
- * fallback twin are listed. Returns an empty string when no role does (the
- * installer then removes any previously written block).
+ * Render the AGENTS.md policy from the config. The agent-role section is always
+ * present (the agents are always installed); the model-fallback section is
+ * included only when at least one role has a fallback twin, and its table/rules
+ * list exactly those roles.
  */
 export function renderPolicy(config: AgentsConfig, template: string = POLICY_TEMPLATE): string {
+  const [workflow = "", fallback = ""] = template.split(FALLBACK_SECTION_MARKER)
+  const head = workflow.trimEnd()
   const roles = rolesWithFallback(config)
-  if (roles.length === 0) return ""
+  if (roles.length === 0) return `${head}\n`
   const rows = roles.map((role) => `| \`${role}\` | \`${role}-fallback\` |`).join("\n")
   const rules = roles.map((role) => `- ${role} -> ${role}-fallback`).join("\n")
-  return template.split("{{FALLBACK_TABLE_ROWS}}").join(rows).split("{{FALLBACK_RULES}}").join(rules)
+  const body = fallback
+    .split("{{FALLBACK_TABLE_ROWS}}")
+    .join(rows)
+    .split("{{FALLBACK_RULES}}")
+    .join(rules)
+    .trim()
+  return body === "" ? `${head}\n` : `${head}\n\n${body}\n`
 }

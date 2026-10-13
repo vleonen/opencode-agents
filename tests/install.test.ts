@@ -118,8 +118,9 @@ describe("install", () => {
     expect(fs.existsSync(path.join(t.agentDir, "qa-fallback.md"))).toBe(true)
     expect(report.files.some((f) => f.fileName === "qa-fallback.md")).toBe(false)
 
-    // The policy no longer references the removed twin.
+    // The policy no longer references the removed twin, but the roles section stays.
     const agentsMd = fs.readFileSync(t.agentsMdPath, "utf8")
+    expect(agentsMd).toContain("## Agent roles")
     expect(agentsMd).not.toContain("qa-fallback")
     expect(agentsMd).toContain("designer-fallback")
   })

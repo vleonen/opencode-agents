@@ -18,7 +18,9 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 - Order after a template edit: `npm run gen` → `npm run typecheck` → `npm test`.
 - Render-time placeholders: `{{MODEL}}`, `{{FALLBACK_MODEL}}`, `{{TWIN_MODE}}`,
   `{{TWIN_HIDDEN}}`, `{{PERMISSION_OVERRIDES}}`; policy: `{{FALLBACK_TABLE_ROWS}}`,
-  `{{FALLBACK_RULES}}`. `renderTemplates` throws if any `{{` survives.
+  `{{FALLBACK_RULES}}` (both only inside the optional fallback section, after the
+  `<!-- fallback-section -->` sentinel in `AGENTS.agents.md`). `renderTemplates`
+  throws if any `{{` survives.
 - Templates author permission rules in the V2 array shape; `renderTemplates`
   rewrites the frontmatter to a **V1-native `permission:` map** (`shell`→`bash`,
   `subagent`→`task`, `write`/`patch`→`edit`) so both runtimes honor it (V2
@@ -95,13 +97,14 @@ bash docker/check-visibility.sh  # twin mode/hidden behavior on v2
   marker only counts as such on its own line, so docs that *mention* the markers
   (like this file) are never mistaken for a policy block.
 - A role may be **primary-only** (no `fallback`): `renderTemplates` omits its
-  `-fallback.md`, `renderPolicy` drops it from the policy table and rules, and an old
-  twin is reported `orphaned` and left on disk — still a live `mode: subagent` agent,
-  reused when a fallback is set again. `--set <role>.fallback=` clears it;
-  `twinMode`/`twinHidden` are ignored (warned) without a fallback.
-- `install` derives the `AGENTS.md` policy from the config via `renderPolicy`
-  (`{{FALLBACK_TABLE_ROWS}}`/`{{FALLBACK_RULES}}`); when no role has a fallback it
-  removes the block instead of writing an empty one.
+  `-fallback.md`, `renderPolicy` drops it from the policy's fallback table and
+  rules (it stays in the agent-roles section), and an old twin is reported
+  `orphaned` and left on disk — still a live `mode: subagent` agent, reused when a
+  fallback is set again. `--set <role>.fallback=` clears it; `twinMode`/`twinHidden`
+  are ignored (warned) without a fallback.
+- `renderPolicy` always writes the agent-roles section (the agents are always
+  installed) and appends the fallback section — split from `AGENTS.agents.md` at
+  `<!-- fallback-section -->` — only when at least one role has a fallback.
 - `AGENTS.agents.md` is a **build-time policy template**, not an auto-loaded
   instruction file. OpenCode V2 loads only `AGENTS.md`; `instructions` entries are not
   resolved.

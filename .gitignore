@@ -3,3 +3,5 @@ dist/
 *.log
 .DS_Store
 docker/.out/
+# A project-scope install of this plugin into its own repo (dogfooding).
+.opencode/

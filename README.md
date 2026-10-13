@@ -20,14 +20,16 @@ Neither OpenCode V1 nor V2 has a native per-agent model fallback: an agent's
 `model` is a single `provider/model` reference, and a plugin cannot register new
 agents. This package therefore:
 
-1. installs the six agents as real Markdown files (so models and permissions work
+1. installs the agents as real Markdown files (so models and permissions work
    natively), and
-2. merges a short **policy** into `AGENTS.md` telling the orchestrator to retry a
-   task once with the `-fallback` twin when the primary agent fails on a
-   *provider* error (never on ordinary task failures).
+2. merges a **policy** into `AGENTS.md` that (a) says when to run each subagent
+   (`designer` before structural code, `reviewer` before finalizing, `qa` for
+   tests/benchmarks) and (b) tells the orchestrator to retry a task once with the
+   `-fallback` twin when the primary agent fails on a *provider* error (never on
+   ordinary task failures).
 
-The plugin only **installs/heals**; the orchestrator performs the retry. This is
-best-effort guidance, not runtime-enforced fallback.
+The plugin only **installs/heals**; the orchestrator follows the guidance. This
+is best-effort, not runtime-enforced.
 
 ## Install
 
@@ -83,10 +85,11 @@ In a terminal it asks, in order:
    `.` = whole project; `none` to clear).
 
 It then writes `<proj>/.opencode/opencode-agents.json`, installs the six agent
-files into `<proj>/.opencode/agents/`, and merges the fallback policy into
-`<proj>/AGENTS.md`. OpenCode discovers `.opencode/agents/*.md` as project agents,
-so designer/qa/reviewer (and their twins) join the project's agent pipeline. A
-fresh project inherits your global model choices.
+files into `<proj>/.opencode/agents/`, and merges the subagent policy (agent
+roles + model fallback) into `<proj>/AGENTS.md`. OpenCode discovers
+`.opencode/agents/*.md` as project agents, so designer/qa/reviewer (and their
+twins) join the project's agent pipeline. A fresh project inherits your global
+model choices.
 
 Non-interactive equivalent (for CI or repeatable setup):
 
@@ -136,10 +139,11 @@ choices.
 ```
 
 `fallback` is optional: omit it (or set it empty) for a **primary-only** agent.
-Such a role renders only its primary agent, is omitted from the `AGENTS.md`
-policy table, and an already-installed twin is left in place and reported
-`orphaned` (so you can set a fallback again later and it is reused). `twinMode`
-and `twinHidden` are ignored without a fallback.
+Such a role renders only its primary agent, is omitted from the policy's
+*fallback* table (it still appears in the agent-roles section), and an
+already-installed twin is left in place and reported `orphaned` (so you can set a
+fallback again later and it is reused). `twinMode` and `twinHidden` are ignored
+without a fallback.
 
 ```json
 {
