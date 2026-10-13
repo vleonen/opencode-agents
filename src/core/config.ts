@@ -11,6 +11,9 @@ export const CONFIG_VERSION = 1
 
 export type PermissionEffect = "allow" | "ask" | "deny"
 
+/** Where the fallback twin may run: `subagent` (not selectable, still launchable) or `all`. */
+export type TwinMode = "subagent" | "all"
+
 /** Extra permission rules appended to an agent's template; last match wins. */
 export interface PermissionRule {
   action: string
@@ -25,6 +28,10 @@ export interface AgentChoice {
   fallback: string
   /** Project/user rules rendered into the template's override slot (never overwritten by upgrades). */
   permissions: PermissionRule[]
+  /** Mode for the fallback twin. Default `subagent`: excluded from the agent selector, still launchable. */
+  twinMode: TwinMode
+  /** Hide the fallback twin from listings (`hidden: true`). Default false. */
+  twinHidden: boolean
 }
 
 export interface AgentsConfig {
@@ -53,10 +60,11 @@ function parsePermissions(raw: unknown): PermissionRule[] {
 
 /** Built-in recommendations, keyed off the primary provider (z.ai) and a different-provider twin. */
 export function defaultChoices(): Record<Role, AgentChoice> {
+  const twin = { twinMode: "subagent" as const, twinHidden: false }
   return {
-    designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [] },
-    reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [] },
-    qa: { model: "zai-coding-plan/glm-5.3-flash", fallback: "deepseek/deepseek-flash", permissions: [] },
+    designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
+    reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
+    qa: { model: "zai-coding-plan/glm-5.3-flash", fallback: "deepseek/deepseek-flash", permissions: [], ...twin },
   }
 }
 
@@ -80,7 +88,9 @@ export function parseConfig(data: unknown): AgentsConfig | null {
     const model = nonEmptyString(raw.model)
     const fallback = nonEmptyString(raw.fallback)
     if (!model || !fallback) return null
-    agents[role] = { model, fallback, permissions: parsePermissions(raw.permissions) }
+    const twinMode: TwinMode = raw.twinMode === "all" ? "all" : "subagent"
+    const twinHidden = raw.twinHidden === true
+    agents[role] = { model, fallback, permissions: parsePermissions(raw.permissions), twinMode, twinHidden }
   }
   const version = typeof data.version === "number" && Number.isFinite(data.version) ? data.version : CONFIG_VERSION
   return { version, scope, agents }
@@ -117,6 +127,11 @@ export function configWarnings(config: AgentsConfig): string[] {
     } else if (providerOf(model) === providerOf(fallback)) {
       out.push(
         `${role}: model and fallback share provider "${providerOf(model)}" — a provider-wide limit would fail both`,
+      )
+    }
+    if (config.agents[role].twinHidden) {
+      out.push(
+        `${role}: twinHidden is set — OpenCode may drop a hidden agent from the subagent catalog, breaking the fallback; prefer twinMode: "subagent"`,
       )
     }
   }

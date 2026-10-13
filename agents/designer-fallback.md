@@ -1,6 +1,7 @@
 ---
 description: "Fallback twin of the `designer` agent. Use only when `designer` failed to complete because its model provider returned an error (quota/rate limit, insufficient balance, or model unavailable). Same read-only design-brief behavior, different model."
-mode: all
+mode: {{TWIN_MODE}}
+hidden: {{TWIN_HIDDEN}}
 model: {{FALLBACK_MODEL}}
 permissions:
   - action: edit

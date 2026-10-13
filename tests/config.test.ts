@@ -67,6 +67,33 @@ describe("config", () => {
     expect(c?.agents.designer.permissions).toEqual([])
   })
 
+  it("defaults twin visibility to subagent-only and visible", () => {
+    const c = defaultConfig("global")
+    expect(c.agents.qa.twinMode).toBe("subagent")
+    expect(c.agents.qa.twinHidden).toBe(false)
+  })
+
+  it("parses twinMode and twinHidden, defaulting unknown modes", () => {
+    const c = parseConfig({
+      scope: "project",
+      agents: {
+        designer: { model: "a/b", fallback: "c/d", twinMode: "all", twinHidden: true },
+        reviewer: { model: "a/b", fallback: "c/d", twinMode: "nonsense" },
+        qa: { model: "a/b", fallback: "c/d" },
+      },
+    })
+    expect(c?.agents.designer.twinMode).toBe("all")
+    expect(c?.agents.designer.twinHidden).toBe(true)
+    expect(c?.agents.reviewer.twinMode).toBe("subagent")
+    expect(c?.agents.qa.twinHidden).toBe(false)
+  })
+
+  it("warns when a twin is hidden", () => {
+    const c = defaultConfig("global")
+    c.agents.qa.twinHidden = true
+    expect(configWarnings(c).some((w) => w.includes("twinHidden"))).toBe(true)
+  })
+
   it("reads and writes a file", () => {
     const dir = tmp()
     const file = path.join(dir, "opencode-agents.json")

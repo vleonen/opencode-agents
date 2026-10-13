@@ -37,11 +37,17 @@ describe("renderTemplates", () => {
     }
   })
 
-  it("twin differs from primary only in description and model", () => {
+  it("twin differs from primary only in description, model, mode, and hidden", () => {
     const normalize = (s: string): string =>
       s
         .split("\n")
-        .filter((l) => !l.startsWith("description:") && !l.startsWith("model:"))
+        .filter(
+          (l) =>
+            !l.startsWith("description:") &&
+            !l.startsWith("model:") &&
+            !l.startsWith("mode:") &&
+            !l.startsWith("hidden:"),
+        )
         .join("\n")
     for (const role of ["designer", "qa", "reviewer"] as const) {
       const primary = rendered.find((r) => r.fileName === `${role}.md`)?.content ?? ""
@@ -76,5 +82,25 @@ describe("renderTemplates", () => {
     expect(qa).not.toContain("PERMISSION_OVERRIDES")
     // overlay rules precede the template's final destructive guards
     expect(qa.indexOf('resource: "vm/vm-ssh.sh *"')).toBeLessThan(qa.indexOf("rm -rf /"))
+  })
+
+  it("renders twins as subagent-only and visible by default", () => {
+    for (const role of ["designer", "qa", "reviewer"] as const) {
+      const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""
+      expect(twin).toContain("mode: subagent")
+      expect(twin).toContain("hidden: false")
+      const primary = rendered.find((r) => r.fileName === `${role}.md`)?.content ?? ""
+      expect(primary).toContain("mode: all")
+      expect(primary).not.toContain("hidden:")
+    }
+  })
+
+  it("honors twinMode and twinHidden", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.qa.twinMode = "all"
+    cfg.agents.qa.twinHidden = true
+    const twin = renderTemplates(cfg).find((r) => r.fileName === "qa-fallback.md")?.content ?? ""
+    expect(twin).toContain("mode: all")
+    expect(twin).toContain("hidden: true")
   })
 })

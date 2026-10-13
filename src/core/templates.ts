@@ -1,5 +1,5 @@
 import { AGENT_TEMPLATES, type AgentTemplateKind } from "../generated/agents"
-import type { AgentsConfig, PermissionRule, Role } from "./config"
+import type { AgentChoice, AgentsConfig, PermissionRule, Role } from "./config"
 import { isRole } from "./config"
 
 export interface RenderedAgent {
@@ -11,6 +11,8 @@ export interface RenderedAgent {
 
 const PRIMARY_TOKEN = "{{MODEL}}"
 const FALLBACK_TOKEN = "{{FALLBACK_MODEL}}"
+const TWIN_MODE_TOKEN = "{{TWIN_MODE}}"
+const TWIN_HIDDEN_TOKEN = "{{TWIN_HIDDEN}}"
 // A YAML comment line where project/user permission rules are injected.
 const OVERRIDES_LINE = /^[ \t]*#[ \t]*\{\{PERMISSION_OVERRIDES\}\}[ \t]*\n/m
 
@@ -27,17 +29,26 @@ function injectOverrides(content: string, rules: readonly PermissionRule[]): str
   return content.replace(OVERRIDES_LINE, () => (rules.length === 0 ? "" : `${rules.map(renderRule).join("\n")}\n`))
 }
 
-/** Substitute the chosen models and permission overlays into the bundled templates. */
+/** Substitute the twin's mode/hidden slots (present only in fallback templates). */
+function renderTwinSlots(content: string, choice: AgentChoice): string {
+  return content
+    .split(TWIN_MODE_TOKEN)
+    .join(choice.twinMode)
+    .split(TWIN_HIDDEN_TOKEN)
+    .join(String(choice.twinHidden))
+}
+
+/** Substitute the chosen models, twin visibility, and permission overlays into the bundled templates. */
 export function renderTemplates(config: AgentsConfig): RenderedAgent[] {
   return AGENT_TEMPLATES.map((t) => {
     if (!isRole(t.role)) throw new Error(`unknown agent role in template: ${t.role}`)
     const choice = config.agents[t.role]
     const token = t.kind === "primary" ? PRIMARY_TOKEN : FALLBACK_TOKEN
     const model = t.kind === "primary" ? choice.model : choice.fallback
-    const content = injectOverrides(t.content.split(token).join(model), choice.permissions)
-    if (content.includes(PRIMARY_TOKEN) || content.includes(FALLBACK_TOKEN)) {
-      throw new Error(`unsubstituted model placeholder in template: ${t.fileName}`)
-    }
+    let content = t.content.split(token).join(model)
+    if (t.kind === "fallback") content = renderTwinSlots(content, choice)
+    content = injectOverrides(content, choice.permissions)
+    if (content.includes("{{")) throw new Error(`unsubstituted placeholder in template: ${t.fileName}`)
     return { fileName: t.fileName, role: t.role, kind: t.kind, content }
   })
 }

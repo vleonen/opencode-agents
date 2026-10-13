@@ -1,14 +1,23 @@
-# Two throwaway opencode instances for verifying the opencode-agents plugin
-# against the V1 and V2 plugin APIs. The host's opencode installation, config,
-# and state are never touched.
+# Throwaway opencode instances for verifying the opencode-agents plugin against
+# the V1 and V2 plugin APIs, plus the twin-visibility variants.
 #
-#   v1:  web UI + server on 127.0.0.1:15196
-#   v2:  web UI + server on 127.0.0.1:15296
+#   v1          web UI + server on 127.0.0.1:15196
+#   v2          web UI + server on 127.0.0.1:15296
+#   v2-subagent twins registered with mode: subagent (default) on :15297
+#   v2-hidden   twins registered with hidden: true on :15298
 #
 # Build the bundles with docker/bundle.sh, then:
-#   docker compose -f docker/compose.yaml up -d --build
+#   docker compose -f docker/compose.yaml up -d --force-recreate --build
 
 name: opencode-agents-verify
+
+x-v2-base: &v2-base
+  image: opencode-agents-verify
+  init: true
+  working_dir: /workspace
+  environment:
+    OPENCODE_LOG_LEVEL: DEBUG
+    TZ: Europe/Moscow
 
 services:
   v1:
@@ -32,15 +41,30 @@ services:
       - ./opencode-agents.json:/root/.config/opencode/opencode-agents.json:ro
 
   v2:
-    image: opencode-agents-verify
-    init: true
-    working_dir: /workspace
+    <<: *v2-base
     command: opencode-v2 serve --port 4096 --hostname 0.0.0.0 --service
-    environment:
-      OPENCODE_LOG_LEVEL: DEBUG
-      TZ: Europe/Moscow
     ports:
       - "127.0.0.1:15296:4096"
     volumes:
       - ./.out/opencode-agents.js:/root/.config/opencode/plugins/opencode-agents.js:ro
       - ./opencode-agents.json:/root/.config/opencode/opencode-agents.json:ro
+
+  v2-subagent:
+    <<: *v2-base
+    command: opencode-v2 serve --port 4096 --hostname 0.0.0.0 --service
+    ports:
+      - "127.0.0.1:15297:4096"
+    volumes:
+      - ./.out/opencode-agents.js:/root/.config/opencode/plugins/opencode-agents.js:ro
+      - ./fixtures/subagent/opencode-agents.json:/root/.config/opencode/opencode-agents.json:ro
+      - ./probe-plugin:/root/.config/opencode/plugins/agents-probe:ro
+
+  v2-hidden:
+    <<: *v2-base
+    command: opencode-v2 serve --port 4096 --hostname 0.0.0.0 --service
+    ports:
+      - "127.0.0.1:15298:4096"
+    volumes:
+      - ./.out/opencode-agents.js:/root/.config/opencode/plugins/opencode-agents.js:ro
+      - ./fixtures/hidden/opencode-agents.json:/root/.config/opencode/opencode-agents.json:ro
+      - ./probe-plugin:/root/.config/opencode/plugins/agents-probe:ro

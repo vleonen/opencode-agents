@@ -1,6 +1,7 @@
 ---
 description: "Fallback twin of the `qa` agent. Use only when `qa` failed to complete because its model provider returned an error (quota/rate limit, insufficient balance, or model unavailable). Same QA/benchmark behavior, different model."
-mode: all
+mode: {{TWIN_MODE}}
+hidden: {{TWIN_HIDDEN}}
 model: {{FALLBACK_MODEL}}
 permissions:
   # --- broad gates FIRST ---

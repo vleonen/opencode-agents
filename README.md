@@ -89,11 +89,27 @@ choices.
       "permissions": [
         { "action": "shell", "resource": "vm/vm-ssh.sh *", "effect": "allow" },
         { "action": "shell", "resource": "rm -rf /", "effect": "deny" }
-      ]
+      ],
+      "twinMode": "subagent",
+      "twinHidden": false
     }
   }
 }
 ```
+
+### Twin visibility
+
+`twinMode` (optional, default `"subagent"`) and `twinHidden` (optional, default
+`false`) control how the `-fallback` twins are registered:
+
+| Field | Values | Effect |
+|---|---|---|
+| `twinMode` | `"subagent"` (default) / `"all"` | `subagent` keeps the twin out of the agent selector / Tab cycle while remaining launchable by the orchestrator and via `@twin`. `all` makes it selectable as a main agent too. |
+| `twinHidden` | `false` (default) / `true` | Sets `hidden: true`, removing the twin from listings **and** the `@` autocomplete. The OpenCode docs also say hidden agents are dropped from the subagent catalog, which would break the automatic fallback — prefer `twinMode: "subagent"` and leave this `false` unless you invoke the twin by command. |
+
+Prefer the default: `mode: subagent` hides a twin from selection without giving up
+the fallback path. `hidden` additionally removes it from the `@` menu and is
+therefore only advisable when you trigger the twin through a command.
 
 ### Permission overlays
 
@@ -172,6 +188,7 @@ npm test
 npm run build          # bundle the CLI to dist/bin.mjs
 bash docker/typecheck.sh   # strict SDK type-compat guard
 bash docker/check.sh       # container verification on V1 + V2 opencode
+bash docker/check-visibility.sh  # twin visibility (mode: subagent vs hidden) on v2
 ```
 
 `agents/*.md` and `AGENTS.agents.md` are the source of truth; `src/generated/agents.ts`

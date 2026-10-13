@@ -1,6 +1,7 @@
 ---
 description: "Fallback twin of the `reviewer` agent. Use only when `reviewer` failed to complete because its model provider returned an error (quota/rate limit, insufficient balance, or model unavailable). Same review behavior, different model."
-mode: all
+mode: {{TWIN_MODE}}
+hidden: {{TWIN_HIDDEN}}
 model: {{FALLBACK_MODEL}}
 permissions:
   # V1 `permission: allow` allowed external-directory reads without prompting — preserved:
