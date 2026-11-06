@@ -271,6 +271,18 @@ goes.
   planner's first dispatch fails with "Subagent depth limit reached". `2` is
   sufficient: the dispatch chain is one hop deep by design (`@planner` →
   worker), and nothing spawns deeper.
+- **Stalled dispatches.** The planner runs a fixed recovery ladder per task:
+  resume the same worker session (by recorded session id) when a report is
+  missing or fails verification, restart with a narrower scope when the resume
+  made no progress or the same blocker repeats, fall back to the twin on
+  provider errors — at most three recovery attempts, then the task is blocked
+  and the batch moves on.
+- **Progress reporting.** The planner works in slices and ends each turn with
+  a `PLANNER-STATUS: CONTINUE | COMPLETE | BLOCKED` report (after every three
+  task transitions); the parent session re-invokes it on `CONTINUE`, so
+  progress lands in the conversation without user intervention. For questions
+  mid-run, read `.opencode/plans/backlog.md` — the planner keeps a status
+  header current after every dispatch.
 - **Context management.** The template defines `COMPACT_THRESHOLD = 50%` and
   `HARD_LIMIT = 70%`: at phase boundaries it flushes all resume state to the
   backlog file and compacts only above the threshold; mid-phase it finishes the

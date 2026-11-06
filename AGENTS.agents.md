@@ -63,9 +63,15 @@ Engage it **only when the user explicitly asks** (`@planner …`, "have the
 planner …"). Never auto-delegate to `@planner` in the normal loop, and never
 run it for ordinary single-task work — `designer`/`qa`/`reviewer` cover that.
 When the user does engage it, hand over the goal and the budget in one message
-and let it run; do not interrupt between tasks. Note: dispatching
-implementation to `build` requires `build` to be subagent-launchable — if a
-launch fails, set `agents.build.mode: "all"` in opencode.jsonc.
+and let it run; do not interrupt between tasks. The planner works in slices
+and ends each turn with a `PLANNER-STATUS:` report: launch it in the
+background for long batches; on `CONTINUE`, immediately re-invoke the same
+planner session to continue the batch — do not wait for the user; on
+`COMPLETE` or `BLOCKED`, stop looping and summarize for the user. Answer
+mid-run progress questions by reading `.opencode/plans/backlog.md`, not by
+pinging the planner. Note: dispatching implementation to `build` requires
+`build` to be subagent-launchable — if a launch fails, set
+`agents.build.mode: "all"` in opencode.jsonc.
 
 <!-- fallback-section -->
 ## Subagent model fallback
