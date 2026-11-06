@@ -138,7 +138,7 @@ choices.
     "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "qa": { "model": "zai-coding-plan/glm-5.3-flash" },
-    "planner": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro", "modifyRoots": [".opencode/plans"] }
+    "planner": { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash", "modifyRoots": [".opencode/plans"] }
   }
 }
 ```

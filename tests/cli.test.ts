@@ -98,7 +98,7 @@ describe("CLI", () => {
       agents: { planner: { model: string; fallback: string; modifyRoots: string[] } }
     }
     expect(cfg.agents.planner.model).toBe("myorg/planner")
-    expect(cfg.agents.planner.fallback).toBe("deepseek/deepseek-v4-pro")
+    expect(cfg.agents.planner.fallback).toBe("deepseek/deepseek-flash")
     // --add-root appends to the shipped default, like qa.
     expect(cfg.agents.planner.modifyRoots).toEqual([".opencode/plans", "plans"])
     const planner = fs.readFileSync(path.join(globalDir, "agent", "planner.md"), "utf8")
@@ -108,7 +108,7 @@ describe("CLI", () => {
     expect(planner).toContain('"*": deny')
     // The twin is installed too and shares the configured roots.
     const twin = fs.readFileSync(path.join(globalDir, "agent", "planner-fallback.md"), "utf8")
-    expect(twin).toContain("model: deepseek/deepseek-v4-pro")
+    expect(twin).toContain("model: deepseek/deepseek-flash")
     expect(twin).toContain('"plans/**": allow')
   })
 
