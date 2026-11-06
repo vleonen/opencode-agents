@@ -19,6 +19,12 @@
       "fallback": "deepseek/deepseek-flash",
       "twinMode": "subagent",
       "twinHidden": false
+    },
+    "planner": {
+      "model": "zai-coding-plan/glm-5.3",
+      "fallback": "deepseek/deepseek-v4-pro",
+      "twinMode": "subagent",
+      "twinHidden": false
     }
   }
 }

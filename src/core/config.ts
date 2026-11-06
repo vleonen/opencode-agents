@@ -4,7 +4,7 @@ import path from "node:path"
 import type { Scope } from "./paths"
 import { isRecord, nonEmptyString } from "./util"
 
-export const ROLES = ["designer", "qa", "reviewer"] as const
+export const ROLES = ["designer", "qa", "reviewer", "planner"] as const
 export type Role = (typeof ROLES)[number]
 
 export const CONFIG_VERSION = 1
@@ -82,6 +82,15 @@ export function defaultChoices(): Record<Role, AgentChoice> {
     designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
     reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
     qa: { model: "zai-coding-plan/glm-5.3-flash", fallback: "deepseek/deepseek-flash", permissions: [], ...twin },
+    // Planning is reasoning-heavy: full model like designer/reviewer. Its default
+    // write scope is the plans directory (rendered after the template's edit gate).
+    planner: {
+      model: "zai-coding-plan/glm-5.3",
+      fallback: "deepseek/deepseek-v4-pro",
+      permissions: [],
+      ...twin,
+      modifyRoots: [".opencode/plans"],
+    },
   }
 }
 
@@ -93,17 +102,26 @@ export function isRole(v: string): v is Role {
   return (ROLES as readonly string[]).includes(v)
 }
 
-/** Structural, defensive parse. Returns null when the shape is unusable. */
+/**
+ * Structural, defensive parse. Returns null when the shape is unusable.
+ * Forward-compatible: a config written before a role existed (the entry is
+ * absent) parses with that role filled from defaults, so adding a role never
+ * invalidates existing configs; a present but unusable entry (no model) or a
+ * config with no role entries at all is rejected.
+ */
 export function parseConfig(data: unknown): AgentsConfig | null {
   if (!isRecord(data)) return null
   const scope: Scope | null = data.scope === "project" ? "project" : data.scope === "global" ? "global" : null
   if (!scope) return null
   const agentsRaw = isRecord(data.agents) ? data.agents : {}
   const agents = {} as Record<Role, AgentChoice>
+  let present = 0
   for (const role of ROLES) {
-    const raw = isRecord(agentsRaw[role]) ? (agentsRaw[role] as Record<string, unknown>) : {}
+    if (!isRecord(agentsRaw[role])) continue
+    const raw = agentsRaw[role] as Record<string, unknown>
     const model = nonEmptyString(raw.model)
     if (!model) return null
+    present++
     const fallback = nonEmptyString(raw.fallback) ?? undefined
     const twinMode: TwinMode = raw.twinMode === "all" ? "all" : "subagent"
     const twinHidden = raw.twinHidden === true
@@ -115,6 +133,11 @@ export function parseConfig(data: unknown): AgentsConfig | null {
       twinMode,
       twinHidden,
     }
+  }
+  if (present === 0) return null
+  const defaults = defaultChoices()
+  for (const role of ROLES) {
+    if (agents[role] === undefined) agents[role] = defaults[role]
   }
   const version = typeof data.version === "number" && Number.isFinite(data.version) ? data.version : CONFIG_VERSION
   return { version, scope, agents }

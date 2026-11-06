@@ -18,7 +18,7 @@ FAIL=0
 ok() { echo "  PASS  $1"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL  $1"; FAIL=$((FAIL + 1)); }
 
-AGENTS=(designer designer-fallback qa qa-fallback reviewer reviewer-fallback)
+AGENTS=(designer designer-fallback qa qa-fallback reviewer reviewer-fallback planner planner-fallback)
 
 cd "$REPO_DIR"
 [ -d node_modules ] || npm ci --silent >/dev/null 2>&1 || npm install --silent >/dev/null
@@ -102,6 +102,10 @@ check_v1_permission_map qa "modifyRoots rendered as an edit allow" \
   'matches("edit","allow","**") && !leaked'
 check_v1_permission_map designer "read-only guard beats an edit grant" \
   'matches("edit","allow","**") && lastAction("edit") === "deny" && !leaked'
+# planner is absent from docker/opencode-agents.json on purpose: this proves the
+# forward-compat migration (absent role filled from defaults, modifyRoots included).
+check_v1_permission_map planner "filled-from-defaults: subagent allowed, shell denied, plans edit allow" \
+  'has("task","allow") && has("bash","deny") && matches("edit","allow",".opencode/plans/**") && matches("edit","deny","*") && !leaked'
 
 if [ "$($COMPOSE logs v1 2>&1 | grep -ciE 'plugin export is not a function|opencode-agents.*(error|failed)')" = "0" ]; then
   ok "v1 loader had no plugin errors"
@@ -169,6 +173,9 @@ check_v2_permission designer "V1 permission map migrated -> subagent denied" 'ha
 check_v2_permission reviewer "V1 permission map migrated -> shell denied" 'has("shell","*","deny")'
 check_v2_permission qa "modifyRoots -> edit allowed" 'has("edit","**","allow")'
 check_v2_permission designer "read-only guard beats an edit grant" 'has("edit","**","allow") && lastEffect("edit") === "deny"'
+check_v2_permission planner "filled-from-defaults -> subagent allowed" 'has("subagent","*","allow")'
+check_v2_permission planner "filled-from-defaults -> shell denied" 'has("shell","*","deny")'
+check_v2_permission planner "plans root allowed after the edit gate" 'has("edit",".opencode/plans/**","allow") && has("edit","*","deny") && lastEffect("edit") === "allow"'
 
 if [ "$($COMPOSE logs v2 2>&1 | grep -ciE 'plugin export is not a function|opencode-agents.*(error|failed)')" = "0" ]; then
   ok "v2 loader had no plugin errors"

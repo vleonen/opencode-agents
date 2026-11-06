@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-agents",
   "version": "0.1.0",
-  "description": "OpenCode plugin + CLI that ships reusable subagents (designer, qa, reviewer) with model-fallback twins, installs them into the chosen scope, and registers the fallback policy in AGENTS.md.",
+  "description": "OpenCode plugin + CLI that ships reusable subagents (designer, qa, reviewer, planner) with model-fallback twins, installs them into the chosen scope, and registers the fallback policy in AGENTS.md.",
   "type": "module",
   "license": "MIT",
   "exports": {

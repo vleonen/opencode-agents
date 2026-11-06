@@ -24,7 +24,36 @@ describe("config", () => {
     expect(c.version).toBe(CONFIG_VERSION)
     expect(c.scope).toBe("global")
     expect(c.agents.designer.model).toBe(defaultChoices().designer.model)
-    expect(Object.keys(c.agents).sort()).toEqual(["designer", "qa", "reviewer"])
+    expect(Object.keys(c.agents).sort()).toEqual(["designer", "planner", "qa", "reviewer"])
+    expect(c.agents.planner.model).toBe("zai-coding-plan/glm-5.3")
+    expect(c.agents.planner.fallback).toBe("deepseek/deepseek-v4-pro")
+    expect(c.agents.planner.modifyRoots).toEqual([".opencode/plans"])
+    expect(c.agents.planner.twinMode).toBe("subagent")
+    expect(c.agents.planner.twinHidden).toBe(false)
+  })
+
+  it("fills absent roles from defaults (a pre-planner config stays valid)", () => {
+    const c = parseConfig({
+      scope: "global",
+      agents: {
+        designer: { model: "myorg/designer", fallback: "other/twin" },
+        reviewer: { model: "myorg/reviewer" },
+        qa: { model: "myorg/qa", fallback: "other/qa-twin", modifyRoots: ["src"] },
+      },
+    })
+    expect(c).not.toBeNull()
+    // The user's own choices survive verbatim.
+    expect(c?.agents.designer.model).toBe("myorg/designer")
+    expect(c?.agents.designer.fallback).toBe("other/twin")
+    expect(c?.agents.qa.modifyRoots).toEqual(["src"])
+    // The role the config predates is filled from defaults, not rejected.
+    expect(c?.agents.planner).toEqual(defaultChoices().planner)
+    expect(parseConfig(JSON.parse(JSON.stringify(c)))).toEqual(c)
+  })
+
+  it("rejects a config with no recognizable role entries", () => {
+    expect(parseConfig({ scope: "global", agents: { unknown: { model: "a/b" } } })).toBeNull()
+    expect(parseConfig({ scope: "global", agents: {} })).toBeNull()
   })
 
   it("round-trips through parseConfig", () => {
@@ -40,7 +69,12 @@ describe("config", () => {
     expect(
       parseConfig({
         scope: "global",
-        agents: { designer: { model: "a/b", fallback: "c/d" }, qa: { fallback: "c/d" }, reviewer: { model: "a/b", fallback: "c/d" } },
+        agents: {
+          designer: { model: "a/b", fallback: "c/d" },
+          qa: { fallback: "c/d" },
+          reviewer: { model: "a/b", fallback: "c/d" },
+          planner: { model: "a/b", fallback: "c/d" },
+        },
       }),
     ).toBeNull()
   })

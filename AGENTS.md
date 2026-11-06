@@ -1,9 +1,9 @@
 # AGENTS.md
 
 Contributor guide for the `opencode-agents` repo: an OpenCode **plugin + CLI** that
-installs up to six agent files (`designer`, `qa`, `reviewer` and, per role, an
-optional `-fallback` twin) into a global or project scope and merges a fallback
-policy block into `AGENTS.md`.
+installs up to eight agent files (`designer`, `qa`, `reviewer`, `planner` and,
+per role, an optional `-fallback` twin) into a global or project scope and
+merges a fallback policy block into `AGENTS.md`.
 
 Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 `README.md` is the user-facing reference; keep it in sync when behavior changes.
@@ -31,7 +31,9 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
   Hard role guards (designer `edit`/`shell`/`subagent`, reviewer `shell`) must be
   the *last* rules, placed after the `{{PERMISSION_OVERRIDES}}` slot — overlays
   and `modifyRoots` render into that slot, and last-match-wins would otherwise let
-  them override the guard.
+  them override the guard. `planner` uses the opposite pattern deliberately:
+  broad gates *first*, no trailing guard, so its `modifyRoots` default
+  (`.opencode/plans`) renders after the gates and wins.
 - `agents.<role>.modifyRoots` (project-relative directories) renders `edit`
   allow rules *before* `permissions`, so explicit rules win. Edit permission
   resources are **worktree-relative** in both runtimes (V2
@@ -40,9 +42,10 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
   the wildcard `*`→`.*`: `**` also matches external absolute resources.
 - `bin/init.ts` prompts only when stdin is a TTY and `--non-interactive` is
   absent: scope (fresh `init` with no project config and no `--scope`), models,
-  then qa's `modifyRoots`. The pure parsers live in `src/core/input.ts` and are
-  unit-tested; a non-interactive fresh `init` with no `--scope` still defaults to
-  global and prints a hint when the directory looks like a project.
+  then the `modifyRoots` prompts (qa, planner — `MODIFY_ROOT_ROLES`). The pure
+  parsers live in `src/core/input.ts` and are unit-tested; a non-interactive
+  fresh `init` with no `--scope` still defaults to global and prints a hint when
+  the directory looks like a project.
 
 ## Layout
 
@@ -55,7 +58,14 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 | `docker/` | Verification harnesses (not shipped). |
 | `tests/` | Vitest; each test isolates via a temp `OPENCODE_CONFIG_DIR`. |
 
-`ROLES` in `src/core/config.ts` is the single list of agent roles.
+`ROLES` in `src/core/config.ts` is the single list of agent roles (mirrored by
+hand in `scripts/gen-agents.mjs`; adding a role means both places plus new
+`agents/<role>.md` + `agents/<role>-fallback.md`, then `npm run gen`).
+
+`parseConfig` is **forward-compatible**: a role entry that is *absent* is filled
+from `defaultChoices()`, so adding a role never invalidates existing configs; a
+*present but model-less* entry and a config with no role entries at all still
+parse to `null`.
 
 ## Commands
 

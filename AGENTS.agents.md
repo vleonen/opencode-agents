@@ -1,13 +1,14 @@
 # Reusable subagents (opencode-agents)
 
-This setup installs three subagents — `designer`, `qa`, and `reviewer` — that
-handle design, review, and test/benchmark work.
+This setup installs four subagents — `designer`, `qa`, `reviewer`, and
+`planner` — that handle design, review, test/benchmark, and autonomous
+planning work.
 
 ## Agent roles
 
 Invoke a subagent with the `subagent` tool (OpenCode V2) or the `task` tool
-(V1), or by mentioning it (`@designer`, `@qa`, `@reviewer`). Delegate to them
-instead of doing everything inline.
+(V1), or by mentioning it (`@designer`, `@qa`, `@reviewer`, `@planner`).
+Delegate to them instead of doing everything inline.
 
 ### `designer` — design before code
 
@@ -50,6 +51,21 @@ available. Delegate when:
 
 The loop: delegate to `@qa`, act on its feedback, and repeat until it confirms
 success with zero regressions.
+
+### `planner` — autonomous batches; explicit invocation only
+
+The planner runs multi-task batches on its own ("plan the next 4 hours of
+work"): it maintains the backlog in `.opencode/plans/backlog.md`, dispatches
+`designer` (design brief), `build` (implementation), `qa` (verification), and
+`reviewer` (finalization) per task, and updates statuses as it goes.
+
+Engage it **only when the user explicitly asks** (`@planner …`, "have the
+planner …"). Never auto-delegate to `@planner` in the normal loop, and never
+run it for ordinary single-task work — `designer`/`qa`/`reviewer` cover that.
+When the user does engage it, hand over the goal and the budget in one message
+and let it run; do not interrupt between tasks. Note: dispatching
+implementation to `build` requires `build` to be subagent-launchable — if a
+launch fails, set `agents.build.mode: "all"` in opencode.jsonc.
 
 <!-- fallback-section -->
 ## Subagent model fallback

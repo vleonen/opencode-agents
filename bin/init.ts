@@ -64,7 +64,7 @@ interface Args {
 
 function usage(): string {
   return [
-    "opencode-agents — install reusable subagents (designer, qa, reviewer) + fallback twins",
+    "opencode-agents — install reusable subagents (designer, qa, reviewer, planner) + fallback twins",
     "",
     "Usage:",
     "  opencode-agents init [options]        install (default)",
@@ -296,22 +296,31 @@ async function promptScope(projectDir: string, globalAgentDir: string, fallback:
   }
 }
 
-/** Ask for the qa agent's modification directories. Blank keeps, `none` clears. */
+/**
+ * Roles with a meaningful modifyRoots default the user may want to relocate.
+ * `planner` ships `.opencode/plans`; `qa` ships none and asks here.
+ */
+const MODIFY_ROOT_ROLES = ["qa", "planner"] as const
+
+/** Ask each configured role for its modification directories. Blank keeps, `none` clears. */
 async function promptModifyRoots(config: AgentsConfig): Promise<void> {
-  const current = config.agents.qa.modifyRoots
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   try {
-    const answer = await rl.question(
-      `qa directories to allow editing without approval (comma-separated; "." = whole project; ` +
-        `"none" to clear; blank keeps [${current.length > 0 ? current.join(", ") : "none"}]): `,
-    )
-    const trimmed = answer.trim()
-    if (trimmed === "") return
-    if (/^(none|no|-)$/i.test(trimmed)) {
-      config.agents.qa.modifyRoots = []
-      return
+    for (const role of MODIFY_ROOT_ROLES) {
+      const current = config.agents[role].modifyRoots
+      const answer = (
+        await rl.question(
+          `${role} directories to allow editing without approval (comma-separated; "." = whole project; ` +
+            `"none" to clear; blank keeps [${current.length > 0 ? current.join(", ") : "none"}]): `,
+        )
+      ).trim()
+      if (answer === "") continue
+      if (/^(none|no|-)$/i.test(answer)) {
+        config.agents[role].modifyRoots = []
+        continue
+      }
+      config.agents[role].modifyRoots = parseModifyRootsInput(answer)
     }
-    config.agents.qa.modifyRoots = parseModifyRootsInput(trimmed)
   } finally {
     rl.close()
   }

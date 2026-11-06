@@ -88,6 +88,30 @@ describe("CLI", () => {
     expect(qa).toContain('"**": allow')
   })
 
+  it("installs the planner with its default plans root, overridable via --add-root/--set", () => {
+    const globalDir = tmp("opencode-agents-global-")
+    const r = run(["init", "--non-interactive", "--set", "planner=myorg/planner", "--add-root", "planner=plans"], {
+      OPENCODE_CONFIG_DIR: globalDir,
+    })
+    expect(r.status).toBe(0)
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalDir, "opencode-agents.json"), "utf8")) as {
+      agents: { planner: { model: string; fallback: string; modifyRoots: string[] } }
+    }
+    expect(cfg.agents.planner.model).toBe("myorg/planner")
+    expect(cfg.agents.planner.fallback).toBe("deepseek/deepseek-v4-pro")
+    // --add-root appends to the shipped default, like qa.
+    expect(cfg.agents.planner.modifyRoots).toEqual([".opencode/plans", "plans"])
+    const planner = fs.readFileSync(path.join(globalDir, "agent", "planner.md"), "utf8")
+    expect(planner).toContain("model: myorg/planner")
+    expect(planner).toContain('".opencode/plans/**": allow')
+    expect(planner).toContain('"plans/**": allow')
+    expect(planner).toContain('"*": deny')
+    // The twin is installed too and shares the configured roots.
+    const twin = fs.readFileSync(path.join(globalDir, "agent", "planner-fallback.md"), "utf8")
+    expect(twin).toContain("model: deepseek/deepseek-v4-pro")
+    expect(twin).toContain('"plans/**": allow')
+  })
+
   it("rejects a malformed --add-root", () => {
     const globalDir = tmp("opencode-agents-global-")
     const r = run(["init", "--non-interactive", "--add-root", "qa"], { OPENCODE_CONFIG_DIR: globalDir })

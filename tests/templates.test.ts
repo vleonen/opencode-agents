@@ -10,6 +10,8 @@ describe("renderTemplates", () => {
     expect(rendered.map((r) => r.fileName).sort()).toEqual([
       "designer-fallback.md",
       "designer.md",
+      "planner-fallback.md",
+      "planner.md",
       "qa-fallback.md",
       "qa.md",
       "reviewer-fallback.md",
@@ -27,7 +29,7 @@ describe("renderTemplates", () => {
   })
 
   it("gives the twin a different model than the primary", () => {
-    for (const role of ["designer", "qa", "reviewer"] as const) {
+    for (const role of ["designer", "qa", "reviewer", "planner"] as const) {
       const primary = rendered.find((r) => r.fileName === `${role}.md`)
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)
       expect(primary).toBeDefined()
@@ -49,7 +51,7 @@ describe("renderTemplates", () => {
             !l.startsWith("hidden:"),
         )
         .join("\n")
-    for (const role of ["designer", "qa", "reviewer"] as const) {
+    for (const role of ["designer", "qa", "reviewer", "planner"] as const) {
       const primary = rendered.find((r) => r.fileName === `${role}.md`)?.content ?? ""
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""
       expect(primary.length).toBeGreaterThan(0)
@@ -169,7 +171,7 @@ describe("renderTemplates", () => {
   })
 
   it("renders twins as subagent-only and visible by default", () => {
-    for (const role of ["designer", "qa", "reviewer"] as const) {
+    for (const role of ["designer", "qa", "reviewer", "planner"] as const) {
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""
       expect(twin).toContain("mode: subagent")
       expect(twin).toContain("hidden: false")
@@ -194,7 +196,42 @@ describe("renderTemplates", () => {
     const files = renderTemplates(cfg).map((r) => r.fileName)
     expect(files).toContain("qa.md")
     expect(files).not.toContain("qa-fallback.md")
-    expect(files).toHaveLength(5)
+    expect(files).toHaveLength(7)
+  })
+
+  it("allows the planner to dispatch subagents while denying shell and non-plans edits", () => {
+    const planner = rendered.find((r) => r.fileName === "planner.md")?.content ?? ""
+    const taskGroup = planner.slice(planner.indexOf("\n  task:\n"), planner.indexOf("\n---\n"))
+    expect(taskGroup).toContain('"*": allow')
+    const bashGroup = planner.slice(planner.indexOf("\n  bash:\n"), planner.indexOf("\n  task:\n"))
+    expect(bashGroup).toContain('"*": deny')
+    const editGroup = planner.slice(planner.indexOf("\n  edit:\n"), planner.indexOf("\n  bash:\n"))
+    // Default modifyRoots render AFTER the broad edit gate, so plans stay writable.
+    const gate = editGroup.indexOf('"*": deny')
+    const plansAllow = editGroup.indexOf('".opencode/plans/**": allow')
+    expect(gate).toBeGreaterThan(-1)
+    expect(plansAllow).toBeGreaterThan(gate)
+  })
+
+  it("leaves the planner edit-denied everywhere when modifyRoots is empty", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.planner.modifyRoots = []
+    const planner = renderTemplates(cfg).find((r) => r.fileName === "planner.md")?.content ?? ""
+    const editGroup = planner.slice(planner.indexOf("\n  edit:\n"), planner.indexOf("\n  bash:\n"))
+    expect(editGroup).toContain('"*": deny')
+    expect(editGroup).not.toContain('"**": allow')
+    expect(editGroup).not.toContain('".opencode/plans/**": allow')
+  })
+
+  it("lets an explicit planner rule override the modifyRoots allow", () => {
+    const cfg = defaultConfig("global")
+    // Same-resource rules collapse to the last effect, so the deny replaces the allow.
+    cfg.agents.planner.permissions = [{ action: "edit", resource: ".opencode/plans/**", effect: "deny" }]
+    const planner = renderTemplates(cfg).find((r) => r.fileName === "planner.md")?.content ?? ""
+    const editGroup = planner.slice(planner.indexOf("\n  edit:\n"), planner.indexOf("\n  bash:\n"))
+    expect(editGroup).toContain('"*": deny')
+    expect(editGroup).toContain('".opencode/plans/**": deny')
+    expect(editGroup).not.toContain('".opencode/plans/**": allow')
   })
 
   it("always renders the agent roles; the fallback table lists only roles with a twin", () => {
@@ -205,17 +242,21 @@ describe("renderTemplates", () => {
     expect(policy).toContain("### `designer`")
     expect(policy).toContain("### `qa`")
     expect(policy).toContain("### `reviewer`")
+    expect(policy).toContain("### `planner`")
+    expect(policy).toContain("only when the user explicitly asks")
     expect(policy).toContain("| `designer` | `designer-fallback` |")
     expect(policy).toContain("| `reviewer` | `reviewer-fallback` |")
+    expect(policy).toContain("| `planner` | `planner-fallback` |")
     expect(policy).not.toContain("qa-fallback")
     expect(policy).not.toContain("{{")
   })
 
   it("renders the agent roles without the fallback section when no role has a fallback", () => {
     const cfg = defaultConfig("global")
-    for (const role of ["designer", "qa", "reviewer"] as const) cfg.agents[role].fallback = undefined
+    for (const role of ["designer", "qa", "reviewer", "planner"] as const) cfg.agents[role].fallback = undefined
     const policy = renderPolicy(cfg)
     expect(policy).toContain("## Agent roles")
+    expect(policy).toContain("### `planner`")
     expect(policy).not.toContain("## Subagent model fallback")
     expect(policy).not.toContain("{{")
   })

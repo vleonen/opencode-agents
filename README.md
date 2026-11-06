@@ -9,6 +9,7 @@ choice — globally or per project.
 | `designer` | Turns a request into an implementation-ready design brief (read-only) | `designer-fallback` |
 | `qa` | Runs and maintains test / benchmark harnesses | `qa-fallback` |
 | `reviewer` | Reviews changes for bugs, style, and security | `reviewer-fallback` |
+| `planner` | Plans and orchestrates multi-task batches — **user-invoked only**; tracks progress in `.opencode/plans/backlog.md` | `planner-fallback` |
 
 Each subagent has a same-behavior **fallback twin** on a different model
 provider, so a provider-side failure (quota, rate limit, exhausted balance, or an
@@ -26,7 +27,8 @@ agents. This package therefore:
    (`designer` before structural code, `reviewer` before finalizing, `qa` for
    tests/benchmarks) and (b) tells the orchestrator to retry a task once with the
    `-fallback` twin when the primary agent fails on a *provider* error (never on
-   ordinary task failures).
+   ordinary task failures). The `planner` is the exception: the policy forbids
+   auto-delegating to it — it runs only on an explicit user request.
 
 The plugin only **installs/heals**; the orchestrator follows the guidance. This
 is best-effort, not runtime-enforced.
@@ -66,7 +68,8 @@ opencode-agents inspect              # dry-run, no writes
 opencode-agents uninstall            # remove owned files + policy + config
 ```
 
-`init` writes `opencode-agents.json` and installs the six agents.
+`init` writes `opencode-agents.json` and installs the agents (eight files: four
+roles plus their fallback twins).
 
 ## Set up in a new project
 
@@ -81,15 +84,16 @@ In a terminal it asks, in order:
 1. **Scope** — install into this project (`<proj>/.opencode/agents`) or globally.
 2. **Models** — the primary/fallback model for each agent (defaults from
    `opencode models`).
-3. **qa directories** — the paths `qa` may edit without approval (comma-separated;
-   `.` = whole project; `none` to clear).
+3. **Directories** — the paths `qa` and `planner` may edit without approval
+   (comma-separated; `.` = whole project; `none` to clear; blank keeps the
+   default — planner ships `.opencode/plans`).
 
-It then writes `<proj>/.opencode/opencode-agents.json`, installs the six agent
+It then writes `<proj>/.opencode/opencode-agents.json`, installs the eight agent
 files into `<proj>/.opencode/agents/`, and merges the subagent policy (agent
 roles + model fallback) into `<proj>/AGENTS.md`. OpenCode discovers
-`.opencode/agents/*.md` as project agents, so designer/qa/reviewer (and their
-twins) join the project's agent pipeline. A fresh project inherits your global
-model choices.
+`.opencode/agents/*.md` as project agents, so designer/qa/reviewer/planner (and
+their twins) join the project's agent pipeline. A fresh project inherits your
+global model choices.
 
 Non-interactive equivalent (for CI or repeatable setup):
 
@@ -133,10 +137,17 @@ choices.
   "agents": {
     "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
-    "qa": { "model": "zai-coding-plan/glm-5.3-flash" }
+    "qa": { "model": "zai-coding-plan/glm-5.3-flash" },
+    "planner": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro", "modifyRoots": [".opencode/plans"] }
   }
 }
 ```
+
+Config files are **forward-compatible**: an `agents` entry for a role your
+installed version does not know yet (or that predates a newly added role) is
+fine — absent roles are filled from defaults on load, while your explicit
+choices are preserved verbatim. `init` reuses the existing config, so upgrading
+never resets your model choices.
 
 `fallback` is optional: omit it (or set it empty) for a **primary-only** agent.
 Such a role renders only its primary agent, is omitted from the policy's
@@ -208,7 +219,11 @@ means the whole project (`"**"`). Entries render before the `permissions`
 overlays, so an explicit `permissions` rule wins on conflict, and like
 `permissions` they apply to both the agent and its `-fallback` twin. On the
 read-only `designer`, `modifyRoots` is moot (its edit guard wins) and the CLI
-warns — use `qa` (or another role) for edit autonomy.
+warns — use `qa` (or another role) for edit autonomy. `planner` is the one role
+that ships a non-empty default (`[".opencode/plans"]`), rendered after its
+template's `edit "*": deny` gate so the plans directory stays writable while
+everything else is denied; relocate or extend it with `--add-root
+planner=<dir>`.
 
 ```json
 {
@@ -228,6 +243,44 @@ also matches absolute *external* resources; combined with `qa`'s
 `external_directory: allow`, `.` therefore also stops prompting for edits outside
 the project. For a strict project-only boundary, list explicit subdirectories
 instead of `.`, or tighten `external_directory` to `ask`.
+
+### The planner (`planner`)
+
+The planner plans and runs **batches** of tasks unattended: one explicit user
+invocation (`@planner plan the next 4 hours`) hands it a goal and a budget, and
+it maintains the backlog in `.opencode/plans/backlog.md`, dispatching
+`designer` → `build` → `qa` → `reviewer` per task and updating statuses as it
+goes.
+
+- **Explicit invocation only.** The installed `AGENTS.md` policy instructs the
+  orchestrator never to auto-delegate to it; it is not part of the normal
+  design/implement/verify loop. The description shipped in `planner.md` says the
+  same, since subagent descriptions are what a launching model sees.
+- **Write scope.** Shell is denied; edits are denied everywhere except its
+  `modifyRoots` (default `.opencode/plans`). Project/user overlays can widen or
+  narrow this per project.
+- **Implementation dispatch targets `build`.** The built-in `build` agent is
+  `mode: primary`, so it is not subagent-launchable until the user overrides it
+  once in `opencode.jsonc`:
+  `{ "agents": { "build": { "mode": "all" } } }` — `build` stays the default
+  primary agent while becoming launchable. Until then the planner falls back to
+  `general` and records the hint in the backlog.
+- **Nested dispatch depth.** The planner launches its workers from inside a
+  subagent, which requires `experimental.subagent_depth: 2` in `opencode.json`.
+  The default of `1` means a subagent cannot start another subagent, so the
+  planner's first dispatch fails with "Subagent depth limit reached". `2` is
+  sufficient: the dispatch chain is one hop deep by design (`@planner` →
+  worker), and nothing spawns deeper.
+- **Context management.** The template defines `COMPACT_THRESHOLD = 50%` and
+  `HARD_LIMIT = 70%`: at phase boundaries it flushes all resume state to the
+  backlog file and compacts only above the threshold; mid-phase it finishes the
+  current task only before flushing. The backlog, not the conversation, is the
+  source of truth, so compaction (or a fresh context) is lossless. Both numbers
+  are prose constants in `agents/planner.md` — edit and re-run `npm run gen` to
+  change them.
+- **Unattended runs** also need the implementing agent's edits to be permitted
+  without prompts; `build`'s defaults allow workspace access, so this works
+  without extra setup once `build` is launchable.
 
 ## Scopes
 
@@ -272,6 +325,11 @@ its primary, since a provider-wide limit would then fail both.
 
 - `designer` is read-only (edit/shell/subagent denied).
 - `reviewer` cannot run shell, but may edit files.
+- `planner` cannot run shell and may edit only its `modifyRoots` (default
+  `.opencode/plans`), but it **may launch subagents** — that is its job. It is
+  invoked explicitly, never auto-delegated. It runs on the invoking session's
+  permissions for anything its children do: `build`/`general` execute edits and
+  (for `build`) workspace tools under their own defaults.
 - `qa` is intentionally permissive. By default its edits prompt (the template
   gate is `edit: "*" ask`); declare the directories it may change without
   prompting via `modifyRoots` (project-relative). Its read-only shell allow-list
@@ -292,6 +350,10 @@ its primary, since a provider-wide limit would then fail both.
 - One hop only: if the twin's provider is also exhausted, there is no third rung.
 - Each twin duplicates its primary's system prompt; edit both when prompts change
   (the manifest detects drift but does not sync it).
+- A planner batch lives as long as the session that invoked it: close the
+  session (or kill the server) mid-run and the run stops. The backlog file
+  persists statuses and results, so the next `@planner` invocation resumes from
+  it rather than starting over.
 
 ## Development
 

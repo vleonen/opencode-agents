@@ -17,7 +17,7 @@ const agentsDir = path.join(root, "agents")
 const policyFile = path.join(root, "AGENTS.agents.md")
 const outFile = path.join(root, "src", "generated", "agents.ts")
 
-const ROLES = ["designer", "qa", "reviewer"]
+const ROLES = ["designer", "qa", "reviewer", "planner"]
 const VARIANTS = [
   ["", "primary"],
   ["-fallback", "fallback"],
