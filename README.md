@@ -65,7 +65,7 @@ the `OPENCODE_AGENTS_*` environment variables.
 ```bash
 opencode-agents init                 # interactive: pick models from `opencode models`
 opencode-agents init --scope project --dir .
-opencode-agents init --yes --set designer.model=zai-coding-plan/glm-5.3
+opencode-agents init --yes --set designer.model=zai-coding-plan/glm-5.4
 opencode-agents inspect              # dry-run, no writes
 opencode-agents uninstall            # remove owned files + policy + config
 ```
@@ -137,11 +137,11 @@ choices.
   "version": 1,
   "scope": "global",
   "agents": {
-    "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
-    "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
+    "designer": { "model": "zai-coding-plan/glm-5.4", "fallback": "deepseek/deepseek-v4-pro" },
+    "reviewer": { "model": "zai-coding-plan/glm-5.4", "fallback": "deepseek/deepseek-v4-pro" },
     "qa": { "model": "zai-coding-plan/glm-5.3-flash" },
     "planner": { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash", "modifyRoots": [".opencode/plans"] },
-    "security": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" }
+    "security": { "model": "zai-coding-plan/glm-5.4", "fallback": "deepseek/deepseek-v4-pro" }
   }
 }
 ```

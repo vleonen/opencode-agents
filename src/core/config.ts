@@ -79,12 +79,12 @@ function parseModifyRoots(raw: unknown): string[] {
 export function defaultChoices(): Record<Role, AgentChoice> {
   const twin = { twinMode: "subagent" as const, twinHidden: false, modifyRoots: [] as string[] }
   return {
-    designer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
-    reviewer: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
+    designer: { model: "zai-coding-plan/glm-5.4", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
+    reviewer: { model: "zai-coding-plan/glm-5.4", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
     qa: { model: "zai-coding-plan/glm-5.3-flash", fallback: "deepseek/deepseek-flash", permissions: [], ...twin },
-    // Quota economy: the planner runs on the flash tier like qa (1.2x peak /
-    // 0.4x off-peak quota vs glm-5.3's 3x/1x). Its default write scope is the
-    // plans directory (rendered after the template's edit gate).
+    // Quota economy: the planner runs on the flash tier like qa; full-tier
+    // models burn more quota. Its default write scope is the plans directory
+    // (rendered after the template's edit gate).
     planner: {
       model: "zai-coding-plan/glm-5.3-flash",
       fallback: "deepseek/deepseek-flash",
@@ -94,7 +94,7 @@ export function defaultChoices(): Record<Role, AgentChoice> {
     },
     // Security review is reasoning-heavy: full model like designer/reviewer.
     // Read-only: its edit/shell/subagent denies are non-overridable guards.
-    security: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
+    security: { model: "zai-coding-plan/glm-5.4", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
   }
 }
 

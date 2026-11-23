@@ -12,7 +12,7 @@
  *   --dir <path>              project directory for --scope project (default: cwd)
  *   --set <agent>[.<field>]=<model>
  *                             set a model; field is `model`/`primary` (default) or `fallback`
- *                             e.g. --set designer=zai-coding-plan/glm-5.3
+ *                             e.g. --set designer=zai-coding-plan/glm-5.4
  *                                  --set designer.fallback=deepseek/deepseek-v4-pro
  *                                  --set designer.fallback=   (clears the twin: primary-only)
  *   --add-root <agent>=<dir>  allow <agent> to edit <dir> without approval
