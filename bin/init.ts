@@ -64,7 +64,7 @@ interface Args {
 
 function usage(): string {
   return [
-    "opencode-agents — install reusable subagents (designer, qa, reviewer, planner) + fallback twins",
+    "opencode-agents — install reusable subagents (designer, qa, reviewer, planner, security) + fallback twins",
     "",
     "Usage:",
     "  opencode-agents init [options]        install (default)",

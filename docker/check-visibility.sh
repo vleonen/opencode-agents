@@ -24,7 +24,7 @@ FAIL=0
 ok() { echo "  PASS  $1"; PASS=$((PASS + 1)); }
 bad() { echo "  FAIL  $1"; FAIL=$((FAIL + 1)); }
 
-TWINS=(designer-fallback qa-fallback reviewer-fallback planner-fallback)
+TWINS=(designer-fallback qa-fallback reviewer-fallback planner-fallback security-fallback)
 
 cd "$REPO_DIR"
 [ -d node_modules ] || npm ci --silent >/dev/null 2>&1 || npm install --silent >/dev/null
@@ -130,7 +130,8 @@ run_variant() { # run_variant <service> <expect-hidden:true|false>
       && printf '%s' "$catalog" | grep -q 'designer:' \
       && printf '%s' "$catalog" | grep -q 'qa:' \
       && printf '%s' "$catalog" | grep -q 'reviewer:' \
-      && printf '%s' "$catalog" | grep -q 'planner:'; then
+      && printf '%s' "$catalog" | grep -q 'planner:' \
+      && printf '%s' "$catalog" | grep -q 'security:'; then
       break
     fi
     sleep 2

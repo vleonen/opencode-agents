@@ -19,6 +19,8 @@ const FILES = [
   "qa-fallback.md",
   "reviewer.md",
   "reviewer-fallback.md",
+  "security.md",
+  "security-fallback.md",
 ]
 
 function tmp(): string {
@@ -33,7 +35,7 @@ describe("install", () => {
   it("installs all agents, the policy block, and a manifest", () => {
     const { env } = globalEnv()
     const report = install({ config: defaultConfig("global"), env })
-    expect(report.files).toHaveLength(8)
+    expect(report.files).toHaveLength(10)
     expect(report.files.every((f) => f.action === "created")).toBe(true)
     expect(report.policy).toBe("created")
 
@@ -96,12 +98,12 @@ describe("install", () => {
     expect(next.files.find((f) => f.fileName === "designer.md")?.action).toBe("updated")
   })
 
-  it("creates seven files for a primary-only role", () => {
+  it("creates nine files for a primary-only role", () => {
     const { env } = globalEnv()
     const config = defaultConfig("global")
     config.agents.qa.fallback = undefined
     const report = install({ config, env })
-    expect(report.files).toHaveLength(7)
+    expect(report.files).toHaveLength(9)
     const t = resolveTargets({ scope: "global", env })
     expect(fs.existsSync(path.join(t.agentDir, "qa-fallback.md"))).toBe(false)
   })

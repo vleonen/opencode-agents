@@ -4,7 +4,7 @@ import path from "node:path"
 import type { Scope } from "./paths"
 import { isRecord, nonEmptyString } from "./util"
 
-export const ROLES = ["designer", "qa", "reviewer", "planner"] as const
+export const ROLES = ["designer", "qa", "reviewer", "planner", "security"] as const
 export type Role = (typeof ROLES)[number]
 
 export const CONFIG_VERSION = 1
@@ -92,6 +92,9 @@ export function defaultChoices(): Record<Role, AgentChoice> {
       ...twin,
       modifyRoots: [".opencode/plans"],
     },
+    // Security review is reasoning-heavy: full model like designer/reviewer.
+    // Read-only: its edit/shell/subagent denies are non-overridable guards.
+    security: { model: "zai-coding-plan/glm-5.3", fallback: "deepseek/deepseek-v4-pro", permissions: [], ...twin },
   }
 }
 
@@ -163,6 +166,13 @@ function providerOf(ref: string): string {
 }
 
 /**
+ * Roles whose templates end in non-overridable edit/shell/subagent deny
+ * guards (guards LAST, after the overlay slot): `modifyRoots` can never
+ * apply to them, so warn instead of silently ignoring it.
+ */
+const READ_ONLY_ROLES: ReadonlySet<Role> = new Set<Role>(["designer", "security"])
+
+/**
  * Non-fatal configuration warnings. The fallback twin is only useful when it
  * runs on a different provider than the primary, so flag a twin that does not.
  */
@@ -177,9 +187,9 @@ export function configWarnings(config: AgentsConfig): string[] {
         )
       }
     }
-    if (role === "designer" && choice.modifyRoots.length > 0) {
+    if (READ_ONLY_ROLES.has(role) && choice.modifyRoots.length > 0) {
       out.push(
-        "designer: modifyRoots is ignored — the designer is read-only (its edit/shell/subagent denies are non-overridable guards)",
+        `${role}: modifyRoots is ignored — ${role} is read-only (its edit/shell/subagent denies are non-overridable guards)`,
       )
     }
     const { model, fallback } = choice

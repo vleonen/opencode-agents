@@ -112,6 +112,32 @@ describe("CLI", () => {
     expect(twin).toContain('"plans/**": allow')
   })
 
+  it("installs security read-only; --add-root warns instead of granting edits", () => {
+    const globalDir = tmp("opencode-agents-global-")
+    const r = run(["init", "--non-interactive", "--set", "security=myorg/sec", "--add-root", "security=src"], {
+      OPENCODE_CONFIG_DIR: globalDir,
+    })
+    expect(r.status).toBe(0)
+    expect((r.stderr ?? "").toString()).toContain("security: modifyRoots is ignored")
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalDir, "opencode-agents.json"), "utf8")) as {
+      agents: { security: { model: string; fallback: string; modifyRoots: string[] } }
+    }
+    expect(cfg.agents.security.model).toBe("myorg/sec")
+    expect(cfg.agents.security.fallback).toBe("deepseek/deepseek-v4-pro")
+    const security = fs.readFileSync(path.join(globalDir, "agent", "security.md"), "utf8")
+    expect(security).toContain("model: myorg/sec")
+    expect(security).toContain("SECURITY-VERDICT")
+    // The modifyRoots allow renders, but the template guard wins (guards LAST).
+    const editGroup = security.slice(security.indexOf("\n  edit:\n"), security.indexOf("\n  bash:\n"))
+    const allow = editGroup.indexOf('"src/**": allow')
+    const deny = editGroup.indexOf('"*": deny')
+    expect(allow).toBeGreaterThan(-1)
+    expect(deny).toBeGreaterThan(allow)
+    const twin = fs.readFileSync(path.join(globalDir, "agent", "security-fallback.md"), "utf8")
+    expect(twin).toContain("model: deepseek/deepseek-v4-pro")
+    expect(twin).toContain('"src/**": allow')
+  })
+
   it("rejects a malformed --add-root", () => {
     const globalDir = tmp("opencode-agents-global-")
     const r = run(["init", "--non-interactive", "--add-root", "qa"], { OPENCODE_CONFIG_DIR: globalDir })

@@ -10,6 +10,7 @@ choice — globally or per project.
 | `qa` | Runs and maintains test / benchmark harnesses | `qa-fallback` |
 | `reviewer` | Reviews changes for bugs, style, and security | `reviewer-fallback` |
 | `planner` | Plans and orchestrates multi-task batches — **user-invoked only**; tracks progress in `.opencode/plans/backlog.md` | `planner-fallback` |
+| `security` | Read-only security review of the whole code base or a design document — **user-invoked only**; evidence-cited findings and a `SECURITY-VERDICT` | `security-fallback` |
 
 Each subagent has a same-behavior **fallback twin** on a different model
 provider, so a provider-side failure (quota, rate limit, exhausted balance, or an
@@ -27,8 +28,9 @@ agents. This package therefore:
    (`designer` before structural code, `reviewer` before finalizing, `qa` for
    tests/benchmarks) and (b) tells the orchestrator to retry a task once with the
    `-fallback` twin when the primary agent fails on a *provider* error (never on
-   ordinary task failures). The `planner` is the exception: the policy forbids
-   auto-delegating to it — it runs only on an explicit user request.
+   ordinary task failures). The `planner` and `security` agents are the
+   exceptions: the policy forbids auto-delegating to them — they run only on
+   an explicit user request.
 
 The plugin only **installs/heals**; the orchestrator follows the guidance. This
 is best-effort, not runtime-enforced.
@@ -68,7 +70,7 @@ opencode-agents inspect              # dry-run, no writes
 opencode-agents uninstall            # remove owned files + policy + config
 ```
 
-`init` writes `opencode-agents.json` and installs the agents (eight files: four
+`init` writes `opencode-agents.json` and installs the agents (ten files: five
 roles plus their fallback twins).
 
 ## Set up in a new project
@@ -88,12 +90,12 @@ In a terminal it asks, in order:
    (comma-separated; `.` = whole project; `none` to clear; blank keeps the
    default — planner ships `.opencode/plans`).
 
-It then writes `<proj>/.opencode/opencode-agents.json`, installs the eight agent
+It then writes `<proj>/.opencode/opencode-agents.json`, installs the ten agent
 files into `<proj>/.opencode/agents/`, and merges the subagent policy (agent
 roles + model fallback) into `<proj>/AGENTS.md`. OpenCode discovers
-`.opencode/agents/*.md` as project agents, so designer/qa/reviewer/planner (and
-their twins) join the project's agent pipeline. A fresh project inherits your
-global model choices.
+`.opencode/agents/*.md` as project agents, so designer/qa/reviewer/planner/
+security (and their twins) join the project's agent pipeline. A fresh project
+inherits your global model choices.
 
 Non-interactive equivalent (for CI or repeatable setup):
 
@@ -138,7 +140,8 @@ choices.
     "designer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" },
     "qa": { "model": "zai-coding-plan/glm-5.3-flash" },
-    "planner": { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash", "modifyRoots": [".opencode/plans"] }
+    "planner": { "model": "zai-coding-plan/glm-5.3-flash", "fallback": "deepseek/deepseek-flash", "modifyRoots": [".opencode/plans"] },
+    "security": { "model": "zai-coding-plan/glm-5.3", "fallback": "deepseek/deepseek-v4-pro" }
   }
 }
 ```
@@ -294,6 +297,42 @@ goes.
   without prompts; `build`'s defaults allow workspace access, so this works
   without extra setup once `build` is launchable.
 
+### The security auditor (`security`)
+
+`@security` is a read-only auditor for work as a whole — never per commit or
+diff (`reviewer` covers changes). It has two modes: a **code base audit**
+(attack surface, trust boundaries, authorization, injection, secrets,
+dependencies, configuration) and a **design review** (security requirements,
+abuse cases, STRIDE, missing controls in a design document or designer
+brief).
+
+- **Explicit invocation only.** The installed `AGENTS.md` policy instructs
+  the orchestrator never to auto-delegate to it, and the description shipped
+  in `security.md` says the same.
+- **Task forms.** `map` returns the attack surface; `audit <scope>` audits
+  the whole code base, a subsystem, or named areas; `review <doc>` reviews a
+  design document; `verify SEC-n` re-checks one earlier finding in a fresh
+  context (the auditor that verifies a finding is not the one that found
+  it).
+- **Large code bases.** Run it as a procedure: `map` first, then one
+  parallel `audit <area>` per mapped area, launched by the orchestrator (all
+  one hop deep, so no `subagent_depth` change). Alternatively Tab-select
+  `security` as the main agent for a long single-session audit and continue
+  by area. Runs are additive; re-running improves coverage.
+- **Report discipline.** Findings are `confirmed` (a source trace from entry
+  point to dangerous operation, with severity) or `needs-validation` (an
+  exact open fact, no severity); refuted candidates are listed under
+  "Ruled out", defense-in-depth gaps under "Hardening". The report ends with
+  a `SECURITY-VERDICT: PASS | FAIL` line plus a `coverage: full | partial`
+  marker — a `PASS` means no confirmed critical/high finding *in what was
+  covered*, not that the system is secure.
+- **Limits.** Strictly read-only: it cannot run scanners, tests, or the
+  code, and it sees the working tree only (no git history, deployment, or
+  logs). When a check needs one of those, the report names the exact command
+  for you (or `@qa`) to run.
+- **Model tier.** Strong, like designer/reviewer: security review is
+  reasoning-heavy, and the audit runs only when you ask for it.
+
 ## Scopes
 
 | Scope | Agents dir | Policy file | Config file |
@@ -336,6 +375,8 @@ its primary, since a provider-wide limit would then fail both.
 ## Security notes
 
 - `designer` is read-only (edit/shell/subagent denied).
+- `security` is read-only (edit/shell/subagent denied). It cannot run
+  scanners or tests; it names the command, and the caller runs it.
 - `reviewer` cannot run shell, but may edit files.
 - `planner` cannot run shell and may edit only its `modifyRoots` (default
   `.opencode/plans`), but it **may launch subagents** — that is its job. It is
@@ -366,6 +407,10 @@ its primary, since a provider-wide limit would then fail both.
   session (or kill the server) mid-run and the run stops. The backlog file
   persists statuses and results, so the next `@planner` invocation resumes from
   it rather than starting over.
+- A `security` audit sees the working tree only, and one pass never covers a
+  large code base; its `coverage` line states what was reviewed. `PASS` means
+  no confirmed critical/high finding in that scope — not that the system is
+  secure.
 
 ## Development
 

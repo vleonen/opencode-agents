@@ -24,15 +24,20 @@ describe("config", () => {
     expect(c.version).toBe(CONFIG_VERSION)
     expect(c.scope).toBe("global")
     expect(c.agents.designer.model).toBe(defaultChoices().designer.model)
-    expect(Object.keys(c.agents).sort()).toEqual(["designer", "planner", "qa", "reviewer"])
+    expect(Object.keys(c.agents).sort()).toEqual(["designer", "planner", "qa", "reviewer", "security"])
     expect(c.agents.planner.model).toBe("zai-coding-plan/glm-5.3-flash")
     expect(c.agents.planner.fallback).toBe("deepseek/deepseek-flash")
     expect(c.agents.planner.modifyRoots).toEqual([".opencode/plans"])
     expect(c.agents.planner.twinMode).toBe("subagent")
     expect(c.agents.planner.twinHidden).toBe(false)
+    expect(c.agents.security.model).toBe("zai-coding-plan/glm-5.3")
+    expect(c.agents.security.fallback).toBe("deepseek/deepseek-v4-pro")
+    expect(c.agents.security.modifyRoots).toEqual([])
+    expect(c.agents.security.twinMode).toBe("subagent")
+    expect(c.agents.security.twinHidden).toBe(false)
   })
 
-  it("fills absent roles from defaults (a pre-planner config stays valid)", () => {
+  it("fills absent roles from defaults (a config predating a role stays valid)", () => {
     const c = parseConfig({
       scope: "global",
       agents: {
@@ -46,8 +51,9 @@ describe("config", () => {
     expect(c?.agents.designer.model).toBe("myorg/designer")
     expect(c?.agents.designer.fallback).toBe("other/twin")
     expect(c?.agents.qa.modifyRoots).toEqual(["src"])
-    // The role the config predates is filled from defaults, not rejected.
+    // The roles the config predates are filled from defaults, not rejected.
     expect(c?.agents.planner).toEqual(defaultChoices().planner)
+    expect(c?.agents.security).toEqual(defaultChoices().security)
     expect(parseConfig(JSON.parse(JSON.stringify(c)))).toEqual(c)
   })
 
@@ -137,10 +143,13 @@ describe("config", () => {
     expect(parseConfig(JSON.parse(JSON.stringify(c)))).toEqual(c)
   })
 
-  it("warns that modifyRoots is ignored on the read-only designer", () => {
+  it("warns that modifyRoots is ignored on the read-only roles (designer, security)", () => {
     const c = defaultConfig("global")
     c.agents.designer.modifyRoots = ["."]
-    expect(configWarnings(c).some((w) => w.startsWith("designer:") && w.includes("read-only"))).toBe(true)
+    c.agents.security.modifyRoots = ["."]
+    const warnings = configWarnings(c)
+    expect(warnings.some((w) => w.startsWith("designer:") && w.includes("read-only"))).toBe(true)
+    expect(warnings.some((w) => w.startsWith("security:") && w.includes("read-only"))).toBe(true)
   })
 
   it("warns when a modifyRoots entry is absolute or home-anchored", () => {

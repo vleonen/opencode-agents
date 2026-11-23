@@ -1,9 +1,9 @@
 # AGENTS.md
 
 Contributor guide for the `opencode-agents` repo: an OpenCode **plugin + CLI** that
-installs up to eight agent files (`designer`, `qa`, `reviewer`, `planner` and,
-per role, an optional `-fallback` twin) into a global or project scope and
-merges a fallback policy block into `AGENTS.md`.
+installs up to ten agent files (`designer`, `qa`, `reviewer`, `planner`,
+`security` and, per role, an optional `-fallback` twin) into a global or
+project scope and merges a fallback policy block into `AGENTS.md`.
 
 Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 `README.md` is the user-facing reference; keep it in sync when behavior changes.
@@ -28,12 +28,14 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
   emit a `permissions:` array: V1 would ignore it and V2 would treat it as a
   provider request option. `docker/check.sh` asserts the rules on both runtimes,
   and `tests/templates.test.ts` guards against a `permissions:` regression.
-  Hard role guards (designer `edit`/`shell`/`subagent`, reviewer `shell`) must be
-  the *last* rules, placed after the `{{PERMISSION_OVERRIDES}}` slot — overlays
-  and `modifyRoots` render into that slot, and last-match-wins would otherwise let
-  them override the guard. `planner` uses the opposite pattern deliberately:
-  broad gates *first*, no trailing guard, so its `modifyRoots` default
-  (`.opencode/plans`) renders after the gates and wins.
+  Hard role guards (designer/security `edit`/`shell`/`subagent`, reviewer
+  `shell`) must be the *last* rules, placed after the `{{PERMISSION_OVERRIDES}}`
+  slot — overlays and `modifyRoots` render into that slot, and last-match-wins
+  would otherwise let them override the guard. `planner` uses the opposite
+  pattern deliberately: broad gates *first*, no trailing guard, so its
+  `modifyRoots` default (`.opencode/plans`) renders after the gates and wins.
+  `configWarnings` treats designer and security as read-only (`READ_ONLY_ROLES`)
+  so a `modifyRoots` entry on them warns instead of silently doing nothing.
 - `agents.<role>.modifyRoots` (project-relative directories) renders `edit`
   allow rules *before* `permissions`, so explicit rules win. Edit permission
   resources are **worktree-relative** in both runtimes (V2

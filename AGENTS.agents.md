@@ -1,14 +1,14 @@
 # Reusable subagents (opencode-agents)
 
-This setup installs four subagents — `designer`, `qa`, `reviewer`, and
-`planner` — that handle design, review, test/benchmark, and autonomous
-planning work.
+This setup installs five subagents — `designer`, `qa`, `reviewer`,
+`planner`, and `security` — that handle design, review, test/benchmark,
+autonomous planning, and security work.
 
 ## Agent roles
 
 Invoke a subagent with the `subagent` tool (OpenCode V2) or the `task` tool
-(V1), or by mentioning it (`@designer`, `@qa`, `@reviewer`, `@planner`).
-Delegate to them instead of doing everything inline.
+(V1), or by mentioning it (`@designer`, `@qa`, `@reviewer`, `@planner`,
+`@security`). Delegate to them instead of doing everything inline.
 
 ### `designer` — design before code
 
@@ -72,6 +72,27 @@ mid-run progress questions by reading `.opencode/plans/backlog.md`, not by
 pinging the planner. Note: dispatching implementation to `build` requires
 `build` to be subagent-launchable — if a launch fails, set
 `agents.build.mode: "all"` in opencode.jsonc.
+
+### `security` — security review of the code base or a design; explicit invocation only
+
+`@security` is the read-only security auditor. It reviews work as a whole,
+never an individual commit or diff: the code base (or a subsystem) — attack
+surface, trust boundaries, authorization, injection, secrets, dependencies,
+configuration — or a feature's design document — security requirements,
+abuse cases, missing controls. It returns evidence-cited findings
+(`confirmed` with a severity, `needs-validation` with an exact open fact)
+and a `SECURITY-VERDICT` line.
+
+Engage it **only when the user explicitly asks** (`@security audit the code
+base`, `@security review docs/design.md`). Never auto-delegate to it —
+`reviewer` covers change-level review. For a whole code base, run it as a
+procedure: ask for `map` first, then launch one `audit <area>` per mapped
+area in parallel, then merge the reports. A `PASS` covers only what its
+`coverage` line lists. Before fixing a critical or high finding, have a
+fresh `@security verify SEC-n` try to refute it. Treat confirmed findings
+as ordinary work: structural fixes go through `@designer` first, then `@qa`
+and `@reviewer`. The auditor cannot run scanners or tests — when a finding
+is `needs-validation`, run the check it names and hand back the result.
 
 <!-- fallback-section -->
 ## Subagent model fallback

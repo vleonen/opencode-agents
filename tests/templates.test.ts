@@ -16,6 +16,8 @@ describe("renderTemplates", () => {
       "qa.md",
       "reviewer-fallback.md",
       "reviewer.md",
+      "security-fallback.md",
+      "security.md",
     ])
   })
 
@@ -29,7 +31,7 @@ describe("renderTemplates", () => {
   })
 
   it("gives the twin a different model than the primary", () => {
-    for (const role of ["designer", "qa", "reviewer", "planner"] as const) {
+    for (const role of ["designer", "qa", "reviewer", "planner", "security"] as const) {
       const primary = rendered.find((r) => r.fileName === `${role}.md`)
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)
       expect(primary).toBeDefined()
@@ -51,7 +53,7 @@ describe("renderTemplates", () => {
             !l.startsWith("hidden:"),
         )
         .join("\n")
-    for (const role of ["designer", "qa", "reviewer", "planner"] as const) {
+    for (const role of ["designer", "qa", "reviewer", "planner", "security"] as const) {
       const primary = rendered.find((r) => r.fileName === `${role}.md`)?.content ?? ""
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""
       expect(primary.length).toBeGreaterThan(0)
@@ -171,7 +173,7 @@ describe("renderTemplates", () => {
   })
 
   it("renders twins as subagent-only and visible by default", () => {
-    for (const role of ["designer", "qa", "reviewer", "planner"] as const) {
+    for (const role of ["designer", "qa", "reviewer", "planner", "security"] as const) {
       const twin = rendered.find((r) => r.fileName === `${role}-fallback.md`)?.content ?? ""
       expect(twin).toContain("mode: subagent")
       expect(twin).toContain("hidden: false")
@@ -196,7 +198,7 @@ describe("renderTemplates", () => {
     const files = renderTemplates(cfg).map((r) => r.fileName)
     expect(files).toContain("qa.md")
     expect(files).not.toContain("qa-fallback.md")
-    expect(files).toHaveLength(7)
+    expect(files).toHaveLength(9)
   })
 
   it("allows the planner to dispatch subagents while denying shell and non-plans edits", () => {
@@ -234,6 +236,34 @@ describe("renderTemplates", () => {
     expect(editGroup).not.toContain('".opencode/plans/**": allow')
   })
 
+  it("keeps security read-only: its denies are guards after an edit grant", () => {
+    const cfg = defaultConfig("global")
+    cfg.agents.security.modifyRoots = ["."]
+    cfg.agents.security.permissions = [{ action: "edit", resource: "**", effect: "allow" }]
+    const security = renderTemplates(cfg).find((r) => r.fileName === "security.md")?.content ?? ""
+    const editGroup = security.slice(security.indexOf("\n  edit:\n"), security.indexOf("\n  bash:\n"))
+    const allow = editGroup.indexOf('"**": allow')
+    const deny = editGroup.indexOf('"*": deny')
+    expect(allow).toBeGreaterThan(-1)
+    // The guard `"*": deny` is last, so last-match-wins keeps security read-only.
+    expect(deny).toBeGreaterThan(allow)
+    const bashGroup = security.slice(security.indexOf("\n  bash:\n"), security.indexOf("\n  task:\n"))
+    expect(bashGroup).toContain('"*": deny')
+    const taskGroup = security.slice(security.indexOf("\n  task:\n"), security.indexOf("\n---\n"))
+    expect(taskGroup).toContain('"*": deny')
+    expect(taskGroup).not.toContain('"*": allow')
+  })
+
+  it("documents the whole-codebase and design-review contract in the security prompt", () => {
+    const security = rendered.find((r) => r.fileName === "security.md")?.content ?? ""
+    expect(security).toContain("SECURITY-VERDICT")
+    expect(security).toContain("trust boundaries")
+    expect(security).toContain("STRIDE")
+    expect(security).toContain("Ruled out")
+    expect(security).toContain("needs-validation")
+    expect(security).toContain("never for an individual commit or diff")
+  })
+
   it("always renders the agent roles; the fallback table lists only roles with a twin", () => {
     const cfg = defaultConfig("global")
     cfg.agents.qa.fallback = undefined
@@ -243,17 +273,20 @@ describe("renderTemplates", () => {
     expect(policy).toContain("### `qa`")
     expect(policy).toContain("### `reviewer`")
     expect(policy).toContain("### `planner`")
+    expect(policy).toContain("### `security`")
     expect(policy).toContain("only when the user explicitly asks")
+    expect(policy).toContain("never an individual commit or diff")
     expect(policy).toContain("| `designer` | `designer-fallback` |")
     expect(policy).toContain("| `reviewer` | `reviewer-fallback` |")
     expect(policy).toContain("| `planner` | `planner-fallback` |")
+    expect(policy).toContain("| `security` | `security-fallback` |")
     expect(policy).not.toContain("qa-fallback")
     expect(policy).not.toContain("{{")
   })
 
   it("renders the agent roles without the fallback section when no role has a fallback", () => {
     const cfg = defaultConfig("global")
-    for (const role of ["designer", "qa", "reviewer", "planner"] as const) cfg.agents[role].fallback = undefined
+    for (const role of ["designer", "qa", "reviewer", "planner", "security"] as const) cfg.agents[role].fallback = undefined
     const policy = renderPolicy(cfg)
     expect(policy).toContain("## Agent roles")
     expect(policy).toContain("### `planner`")

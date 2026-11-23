@@ -18,7 +18,7 @@ describe("project-scope round trip", () => {
     const config = defaultConfig("project")
     const report = install({ config, projectDir })
 
-    expect(report.files).toHaveLength(8)
+    expect(report.files).toHaveLength(10)
     expect(report.policy).toBe("created")
 
     const t = resolveTargets({ scope: "project", projectDir })
