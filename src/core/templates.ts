@@ -1,5 +1,14 @@
 import { AGENT_TEMPLATES, POLICY_TEMPLATE, type AgentTemplateKind } from "../generated/agents"
-import { ROLES, isRole, type AgentChoice, type AgentsConfig, type PermissionRule, type Role } from "./config"
+import {
+  defaultFallbackPolicy,
+  ROLES,
+  isRole,
+  type AgentChoice,
+  type AgentsConfig,
+  type FallbackPolicy,
+  type PermissionRule,
+  type Role,
+} from "./config"
 
 export interface RenderedAgent {
   fileName: string
@@ -163,10 +172,49 @@ export function rolesWithFallback(config: AgentsConfig): Role[] {
 const FALLBACK_SECTION_MARKER = "<!-- fallback-section -->"
 
 /**
+ * Trigger paragraph and retry-budget paragraph for the fallback section, from
+ * the configured policy. The delay applies to rate-limit errors only: a quota
+ * window outlasts any sane delay, and a drained balance never heals by waiting,
+ * so those fall back immediately. `maxRetries: 0` renders a do-not-retry policy.
+ */
+function fallbackSentences(policy: FallbackPolicy): { retry: string; budget: string } {
+  const trigger =
+    "If one of the subagents above fails to complete because its provider returned an " +
+    'error — quota/rate limit (429, "5-hour limit reached"), insufficient balance, or ' +
+    "model unavailable"
+  const retry =
+    policy.maxRetries === 0
+      ? `${trigger} — do not retry: report the error to the user immediately.`
+      : policy.retryDelaySeconds === 0
+        ? `${trigger} — retry the same task with the matching twin:`
+        : `${trigger} — retry the same task with the matching twin. For rate-limit errors (429) wait ` +
+          `${policy.retryDelaySeconds} ${policy.retryDelaySeconds === 1 ? "second" : "seconds"} before launching ` +
+          "the twin; for quota, balance, or model-unavailable errors fall back immediately:"
+  const budget: string[] = []
+  if (policy.maxRetries === 0) {
+    budget.push("Do not retry a failed subagent: report the provider error and stop.")
+  } else if (policy.maxRetries === 1) {
+    budget.push("Retry at most once per task. If the twin also fails, stop and report the error.")
+  } else {
+    budget.push(`Retry at most ${policy.maxRetries} times per task. If the twin keeps failing, stop and report the error.`)
+  }
+  // Stall detection feeds the fallback, so it only renders when a retry is allowed.
+  if (policy.maxRetries > 0 && policy.stallTimeoutMinutes > 0) {
+    budget.push(
+      `If a subagent produces no output for ${policy.stallTimeoutMinutes} ` +
+        `${policy.stallTimeoutMinutes === 1 ? "minute" : "minutes"}, treat it as failed by ` +
+        "timeout and apply the same fallback.",
+    )
+  }
+  return { retry, budget: budget.join(" ") }
+}
+
+/**
  * Render the AGENTS.md policy from the config. The agent-role section is always
  * present (the agents are always installed); the model-fallback section is
  * included only when at least one role has a fallback twin, and its table/rules
- * list exactly those roles.
+ * list exactly those roles. The retry paragraphs come from
+ * `config.fallbackPolicy` (defaults when absent, for hand-built configs).
  */
 export function renderPolicy(config: AgentsConfig, template: string = POLICY_TEMPLATE): string {
   const [workflow = "", fallback = ""] = template.split(FALLBACK_SECTION_MARKER)
@@ -175,11 +223,17 @@ export function renderPolicy(config: AgentsConfig, template: string = POLICY_TEM
   if (roles.length === 0) return `${head}\n`
   const rows = roles.map((role) => `| \`${role}\` | \`${role}-fallback\` |`).join("\n")
   const rules = roles.map((role) => `- ${role} -> ${role}-fallback`).join("\n")
+  const { retry, budget } = fallbackSentences(config.fallbackPolicy ?? defaultFallbackPolicy())
   const body = fallback
     .split("{{FALLBACK_TABLE_ROWS}}")
     .join(rows)
+    .split("{{FALLBACK_RETRY_SENTENCE}}")
+    .join(retry)
+    .split("{{FALLBACK_BUDGET_SENTENCE}}")
+    .join(budget)
     .split("{{FALLBACK_RULES}}")
     .join(rules)
     .trim()
+  if (body.includes("{{")) throw new Error("policy template has an unsubstituted placeholder")
   return body === "" ? `${head}\n` : `${head}\n\n${body}\n`
 }

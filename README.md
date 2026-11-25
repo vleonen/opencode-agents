@@ -26,11 +26,13 @@ agents. This package therefore:
    natively), and
 2. merges a **policy** into `AGENTS.md` that (a) says when to run each subagent
    (`designer` before structural code, `reviewer` before finalizing, `qa` for
-   tests/benchmarks) and (b) tells the orchestrator to retry a task once with the
+   tests/benchmarks) and (b) tells the orchestrator to retry a task with the
    `-fallback` twin when the primary agent fails on a *provider* error (never on
-   ordinary task failures). The `planner` and `security` agents are the
-   exceptions: the policy forbids auto-delegating to them — they run only on
-   an explicit user request.
+   ordinary task failures), following the configurable retry policy
+   (retries, rate-limit cool-down, stall timeout — see
+   [Fallback retry policy](#fallback-retry-policy)). The `planner` and `security`
+   agents are the exceptions: the policy forbids auto-delegating to them — they
+   run only on an explicit user request.
 
 The plugin only **installs/heals**; the orchestrator follows the guidance. This
 is best-effort, not runtime-enforced.
@@ -115,7 +117,7 @@ go in the config's `permissions` array. Preview with
 |---|---|
 | `--scope global\|project` | Install target. A fresh interactive `init` asks; otherwise default: the existing config's scope, else `global`. |
 | `--dir <path>` | Project directory for `--scope project` (default: cwd). |
-| `--set <agent>[.<field>]=<model>` | Set a model. `<field>` is `model`/`primary` (default) or `fallback`. An empty `fallback` (e.g. `--set qa.fallback=`) clears the twin, making the agent primary-only. |
+| `--set <agent>[.<field>]=<model>` | Set a model. `<field>` is `model`/`primary` (default) or `fallback`. An empty `fallback` (e.g. `--set qa.fallback=`) clears the twin, making the agent primary-only. Also accepts `fallbackPolicy.<field>=<n>` with `<field>` = `maxRetries` / `retryDelaySeconds` / `stallTimeoutMinutes`. |
 | `--add-root <agent>=<dir>` | Add a modification directory (`modifyRoots`). Project-relative; `.` = whole project. Repeatable. |
 | `--config <file>` | Base JSON config to start from. |
 | `--yes`, `-y`, `--non-interactive` | Never prompt; use defaults / flags. |
@@ -136,6 +138,7 @@ choices.
 {
   "version": 1,
   "scope": "global",
+  "fallbackPolicy": { "maxRetries": 1, "retryDelaySeconds": 30, "stallTimeoutMinutes": 10 },
   "agents": {
     "designer": { "model": "zai-coding-plan/glm-5.4", "fallback": "deepseek/deepseek-v4-pro" },
     "reviewer": { "model": "zai-coding-plan/glm-5.4", "fallback": "deepseek/deepseek-v4-pro" },
@@ -168,6 +171,43 @@ without a fallback.
   }
 }
 ```
+
+### Fallback retry policy
+
+`fallbackPolicy` (optional, global — not per-role) controls the retry guidance
+the AGENTS.md block gives the orchestrator:
+
+```json
+{
+  "fallbackPolicy": {
+    "maxRetries": 1,
+    "retryDelaySeconds": 30,
+    "stallTimeoutMinutes": 10
+  }
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `maxRetries` | `1` | Twin re-launches per task after a provider error. `1` keeps the documented one-hop contract; `0` disables the fallback (report the error immediately). |
+| `retryDelaySeconds` | `30` | Cool-down before launching the twin. Rendered as applying to **rate-limit (429) errors only** — quota/balance errors fall back immediately, because no sane delay outlasts a quota window and a drained balance never heals by waiting. `0` retries immediately. |
+| `stallTimeoutMinutes` | `10` | Treat a subagent producing no output for this many minutes as failed by timeout and apply the fallback. `0` disables stall detection. Not rendered when `maxRetries` is `0` (there is no fallback to apply). |
+
+Values are non-negative integers, clamped to sanity caps (`maxRetries` ≤ 10,
+`retryDelaySeconds` ≤ 3600, `stallTimeoutMinutes` ≤ 120); invalid values fall
+back to the default field-by-field.
+
+These are **guidance, not enforcement**: OpenCode exposes no hook for a plugin to
+retry provider calls, so the orchestrator model follows the rendered sentences
+between subagent launches (same trust model as the rest of the policy). A config
+without the section parses with the defaults, and the section is ignored when no
+role has a fallback twin (a warning is reported only when non-default values are
+set). Set it with `--set fallbackPolicy.retryDelaySeconds=60` (fields:
+`maxRetries`, `retryDelaySeconds`, `stallTimeoutMinutes`). Note the limits of
+the guidance model: the policy reaches the *main session's* orchestrator, while
+the `planner`'s own internal dispatch loop follows its hard-coded "retry once"
+wording, and a stall timeout is a heuristic the orchestrator applies between
+check-ins — neither is a hard timer.
 
 ### Twin visibility
 

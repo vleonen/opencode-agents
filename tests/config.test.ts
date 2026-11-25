@@ -9,6 +9,7 @@ import {
   configWarnings,
   defaultChoices,
   defaultConfig,
+  defaultFallbackPolicy,
   parseConfig,
   readConfig,
   writeConfig,
@@ -223,5 +224,73 @@ describe("config", () => {
     const sameProvider = defaultConfig("global")
     sameProvider.agents.reviewer.fallback = "zai-coding-plan/glm-5.2"
     expect(configWarnings(sameProvider).some((w) => w.includes("share provider"))).toBe(true)
+  })
+
+  it("defaults the fallback policy to 1 retry, 30s delay, 10min stall", () => {
+    const c = defaultConfig("global")
+    expect(c.fallbackPolicy).toEqual({ maxRetries: 1, retryDelaySeconds: 30, stallTimeoutMinutes: 10 })
+  })
+
+  it("fills an absent fallbackPolicy section from defaults (a config predating it stays valid)", () => {
+    const c = parseConfig({
+      scope: "global",
+      agents: { designer: { model: "a/b", fallback: "c/d" } },
+    })
+    expect(c?.fallbackPolicy).toEqual(defaultFallbackPolicy())
+    expect(parseConfig(JSON.parse(JSON.stringify(c)))).toEqual(c)
+  })
+
+  it("parses a valid fallbackPolicy and drops invalid values to defaults", () => {
+    const base = { scope: "global", agents: { designer: { model: "a/b", fallback: "c/d" } } }
+    expect(parseConfig({ ...base, fallbackPolicy: { maxRetries: 2, retryDelaySeconds: 60, stallTimeoutMinutes: 5 } })?.fallbackPolicy).toEqual({
+      maxRetries: 2,
+      retryDelaySeconds: 60,
+      stallTimeoutMinutes: 5,
+    })
+    // Invalid entries fall back field-by-field, not section-by-section.
+    expect(
+      parseConfig({
+        ...base,
+        fallbackPolicy: { maxRetries: -1, retryDelaySeconds: 1.5, stallTimeoutMinutes: "ten", maxJunk: 3 },
+      })?.fallbackPolicy,
+    ).toEqual(defaultFallbackPolicy())
+  })
+
+  it("treats a malformed fallbackPolicy section as absent", () => {
+    const base = { scope: "global", agents: { designer: { model: "a/b", fallback: "c/d" } } }
+    for (const section of [null, "twin", 5, [], true]) {
+      expect(parseConfig({ ...base, fallbackPolicy: section })?.fallbackPolicy).toEqual(defaultFallbackPolicy())
+    }
+    // Null/true field values fall back per field; valid neighbors survive.
+    expect(
+      parseConfig({ ...base, fallbackPolicy: { maxRetries: null, retryDelaySeconds: true, stallTimeoutMinutes: 20 } })
+        ?.fallbackPolicy,
+    ).toEqual({ maxRetries: 1, retryDelaySeconds: 30, stallTimeoutMinutes: 20 })
+  })
+
+  it("clamps out-of-range fallbackPolicy values to sanity caps", () => {
+    const base = { scope: "global", agents: { designer: { model: "a/b", fallback: "c/d" } } }
+    expect(
+      parseConfig({ ...base, fallbackPolicy: { maxRetries: 99, retryDelaySeconds: 1e21, stallTimeoutMinutes: 5000 } })
+        ?.fallbackPolicy,
+    ).toEqual({ maxRetries: 10, retryDelaySeconds: 3600, stallTimeoutMinutes: 120 })
+  })
+
+  it("warns when maxRetries is 0 while fallback twins exist, and not otherwise", () => {
+    const c = defaultConfig("global")
+    c.fallbackPolicy.maxRetries = 0
+    expect(configWarnings(c).some((w) => w.includes("maxRetries is 0"))).toBe(true)
+    expect(configWarnings(defaultConfig("global"))).toEqual([])
+  })
+
+  it("warns when fallbackPolicy is customized but no role has a fallback twin", () => {
+    const c = defaultConfig("global")
+    for (const role of ["designer", "qa", "reviewer", "planner", "security"] as const) c.agents[role].fallback = undefined
+    expect(configWarnings(c)).toEqual([])
+    c.fallbackPolicy.retryDelaySeconds = 120
+    expect(configWarnings(c).some((w) => w.includes("no role has a fallback model"))).toBe(true)
+    // Default values are not reported as a customization.
+    c.fallbackPolicy = defaultFallbackPolicy()
+    expect(configWarnings(c)).toEqual([])
   })
 })

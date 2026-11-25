@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { defaultConfig } from "../src/core/config"
+import { POLICY_TEMPLATE } from "../src/generated/agents"
 import { renderPolicy, renderTemplates } from "../src/core/templates"
 
 describe("renderTemplates", () => {
@@ -292,5 +293,96 @@ describe("renderTemplates", () => {
     expect(policy).toContain("### `planner`")
     expect(policy).not.toContain("## Subagent model fallback")
     expect(policy).not.toContain("{{")
+  })
+
+  describe("fallback policy sentences", () => {
+    it("renders the default policy: 30s rate-limit wait, once-per-task budget, 10min stall", () => {
+      const policy = renderPolicy(defaultConfig("global"))
+      expect(policy).toContain(
+        "retry the same task with the matching twin. For rate-limit errors (429) wait 30 seconds " +
+          "before launching the twin; for quota, balance, or model-unavailable errors fall back immediately:",
+      )
+      expect(policy).toContain("Retry at most once per task. If the twin also fails, stop and report the error.")
+      expect(policy).toContain(
+        "If a subagent produces no output for 10 minutes, treat it as failed by timeout and apply the same fallback.",
+      )
+      expect(policy).toContain("Do not fall back for ordinary task failures")
+      expect(policy).not.toContain("{{")
+    })
+
+    it("omits the delay clause when retryDelaySeconds is 0", () => {
+      const cfg = defaultConfig("global")
+      cfg.fallbackPolicy.retryDelaySeconds = 0
+      const policy = renderPolicy(cfg)
+      expect(policy).toContain("— retry the same task with the matching twin:")
+      expect(policy).not.toContain("wait 0 seconds")
+      expect(policy).not.toContain("rate-limit errors (429) wait")
+    })
+
+    it("renders N-retries wording for maxRetries >= 2", () => {
+      const cfg = defaultConfig("global")
+      cfg.fallbackPolicy.maxRetries = 3
+      const policy = renderPolicy(cfg)
+      expect(policy).toContain("Retry at most 3 times per task. If the twin keeps failing, stop and report the error.")
+      expect(policy).not.toContain("Retry at most once per task")
+    })
+
+    it("uses singular units for 1 second / 1 minute", () => {
+      const cfg = defaultConfig("global")
+      cfg.fallbackPolicy.retryDelaySeconds = 1
+      cfg.fallbackPolicy.stallTimeoutMinutes = 1
+      const policy = renderPolicy(cfg)
+      expect(policy).toContain("wait 1 second before launching the twin")
+      expect(policy).toContain("produces no output for 1 minute, treat it as failed")
+      expect(policy).not.toContain("1 seconds")
+      expect(policy).not.toContain("1 minutes")
+    })
+
+    it("throws when a template placeholder is left unsubstituted", () => {
+      const cfg = defaultConfig("global")
+      const broken = POLICY_TEMPLATE.replace("{{FALLBACK_BUDGET_SENTENCE}}", "{{FALLBACK_UNKNOWN_TOKEN}}")
+      expect(() => renderPolicy(cfg, broken)).toThrow("unsubstituted placeholder")
+      // The bundled template itself always renders clean.
+      expect(renderPolicy(cfg)).not.toContain("{{")
+    })
+
+    it("renders a do-not-retry policy for maxRetries 0", () => {
+      const cfg = defaultConfig("global")
+      cfg.fallbackPolicy.maxRetries = 0
+      cfg.fallbackPolicy.stallTimeoutMinutes = 0
+      const policy = renderPolicy(cfg)
+      expect(policy).toContain("do not retry: report the error to the user immediately.")
+      expect(policy).toContain("Do not retry a failed subagent: report the provider error and stop.")
+      expect(policy).not.toContain("Retry at most")
+      expect(policy).not.toContain("produces no output")
+      expect(policy).not.toContain("{{")
+    })
+
+    it("suppresses the stall clause when retries are disabled, even with the default stall timeout", () => {
+      // maxRetries 0 alone must not contradict itself: no "apply the same fallback"
+      // next to "do not retry".
+      const cfg = defaultConfig("global")
+      cfg.fallbackPolicy.maxRetries = 0
+      const policy = renderPolicy(cfg)
+      expect(policy).toContain("Do not retry a failed subagent: report the provider error and stop.")
+      expect(policy).not.toContain("produces no output")
+      expect(policy).not.toContain("apply the same fallback")
+    })
+
+    it("omits the stall clause when stallTimeoutMinutes is 0", () => {
+      const cfg = defaultConfig("global")
+      cfg.fallbackPolicy.stallTimeoutMinutes = 0
+      const policy = renderPolicy(cfg)
+      expect(policy).toContain("Retry at most once per task.")
+      expect(policy).not.toContain("produces no output")
+    })
+
+    it("renders without a fallbackPolicy on the config (defaults apply)", () => {
+      const cfg = defaultConfig("global") as unknown as Record<string, unknown>
+      delete cfg.fallbackPolicy
+      const policy = renderPolicy(cfg as unknown as Parameters<typeof renderPolicy>[0])
+      expect(policy).toContain("wait 30 seconds")
+      expect(policy).toContain("produces no output for 10 minutes")
+    })
   })
 })

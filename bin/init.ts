@@ -15,6 +15,10 @@
  *                             e.g. --set designer=zai-coding-plan/glm-5.4
  *                                  --set designer.fallback=deepseek/deepseek-v4-pro
  *                                  --set designer.fallback=   (clears the twin: primary-only)
+ *                             or set the fallback retry policy:
+ *                                  --set fallbackPolicy.maxRetries=1
+ *                                  --set fallbackPolicy.retryDelaySeconds=30
+ *                                  --set fallbackPolicy.stallTimeoutMinutes=10
  *   --add-root <agent>=<dir>  allow <agent> to edit <dir> without approval
  *                             (project-relative; `.` = whole project). Repeatable.
  *   --config <file>           base JSON config to start from
@@ -33,11 +37,14 @@ import readline from "node:readline/promises"
 import process from "node:process"
 
 import {
+  clampFallbackPolicyField,
   type AgentsConfig,
+  type FallbackPolicy,
   type Role,
   ROLES,
   configWarnings,
   defaultConfig,
+  defaultFallbackPolicy,
   isRole,
   readConfig,
   writeConfig,
@@ -76,7 +83,9 @@ function usage(): string {
     "                            otherwise defaults to existing config, else global)",
     "  --dir <path>              project directory for --scope project (default: cwd)",
     "  --set <agent>[.<field>]=<model>   field: model|primary (default) or fallback;",
-    "                                    an empty fallback clears the twin (primary-only agent)",
+    "                                    an empty fallback clears the twin (primary-only agent);",
+    "                                    fallbackPolicy.<field>=<n> sets the retry policy",
+    "                                    (field: maxRetries|retryDelaySeconds|stallTimeoutMinutes)",
     "  --add-root <agent>=<dir>  allow <agent> to edit <dir> without approval",
     "                            (project-relative; `.` = whole project). Repeatable.",
     "  --config <file>           base JSON config",
@@ -93,6 +102,7 @@ function usage(): string {
     "  opencode-agents init --scope project --dir .          # install into this project",
     "  opencode-agents init --scope project --dir . --add-root qa=. --non-interactive",
     "  opencode-agents init --yes --set qa.fallback=deepseek/deepseek-flash",
+    "  opencode-agents init --yes --set fallbackPolicy.retryDelaySeconds=60",
   ].join("\n")
 }
 
@@ -169,14 +179,18 @@ function parseArgs(argv: string[]): Args {
 
 function applySet(config: AgentsConfig, expr: string): void {
   const eq = expr.indexOf("=")
-  if (eq < 0) throw new Error(`--set expects <agent>[.<field>]=<model> (got "${expr}")`)
+  if (eq < 0) throw new Error(`--set expects <agent>[.<field>]=<model> or fallbackPolicy.<field>=<n> (got "${expr}")`)
   const key = expr.slice(0, eq).trim()
   const value = expr.slice(eq + 1).trim()
   const parts = key.split(".")
   if (parts.length > 2) throw new Error(`--set key has too many segments (expected <agent> or <agent>.<field>): ${key}`)
-  const [rolePart, fieldPart] = parts
-  if (!rolePart || !isRole(rolePart)) throw new Error(`--set references an unknown agent: ${key}`)
-  const role: Role = rolePart
+  const [headPart, fieldPart] = parts
+  if (headPart === "fallbackPolicy") {
+    applyFallbackPolicySet(config, fieldPart ?? "", value, expr)
+    return
+  }
+  if (!headPart || !isRole(headPart)) throw new Error(`--set references an unknown agent: ${key}`)
+  const role: Role = headPart
   const field = fieldPart ?? "model"
   if (field === "model" || field === "primary") {
     if (value === "") throw new Error(`--set ${field} needs a model (got "${expr}")`)
@@ -187,6 +201,22 @@ function applySet(config: AgentsConfig, expr: string): void {
   } else {
     throw new Error(`--set field must be model|primary|fallback (got "${field}")`)
   }
+}
+
+/** The policy fields, derived from the source of truth so the list cannot drift. */
+const FALLBACK_POLICY_FIELDS = Object.keys(defaultFallbackPolicy()) as Array<keyof FallbackPolicy>
+
+/** `--set fallbackPolicy.<field>=<n>`: a plain non-negative integer on the global retry policy. */
+function applyFallbackPolicySet(config: AgentsConfig, field: string, value: string, expr: string): void {
+  if (!(FALLBACK_POLICY_FIELDS as string[]).includes(field)) {
+    throw new Error(`--set fallbackPolicy field must be maxRetries|retryDelaySeconds|stallTimeoutMinutes (got "${field || "(empty)"}")`)
+  }
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`--set fallbackPolicy.${field} needs a non-negative integer (got "${expr}")`)
+  }
+  // Digits-only can still exceed Number's range (Infinity), so clamp like the parse path does.
+  const key = field as keyof FallbackPolicy
+  config.fallbackPolicy[key] = clampFallbackPolicyField(key, Number(value))
 }
 
 function applyRoot(config: AgentsConfig, expr: string): void {
@@ -363,6 +393,13 @@ function printInspectReport(report: ReturnType<typeof inspect>): void {
   process.stdout.write(`  policy block present: ${report.policyPresent}\n`)
 }
 
+function printFallbackPolicy(config: AgentsConfig): void {
+  const p = config.fallbackPolicy
+  process.stdout.write(
+    `  fallback policy: maxRetries=${p.maxRetries} retryDelaySeconds=${p.retryDelaySeconds} stallTimeoutMinutes=${p.stallTimeoutMinutes}\n`,
+  )
+}
+
 async function run(): Promise<number> {
   let args: Args
   try {
@@ -456,6 +493,7 @@ async function run(): Promise<number> {
 
   if (args.command === "inspect") {
     printInspectReport(inspect(installOpts))
+    printFallbackPolicy(config)
     return 0
   }
 
@@ -469,6 +507,7 @@ async function run(): Promise<number> {
   // Persist the config only after the install succeeded.
   writeConfig(targets.configPath, config)
   printReport("Install", report.targets, report.files, report.policy, report.orphaned)
+  printFallbackPolicy(config)
   process.stdout.write(
     "\nVerify:  opencode-agents inspect   # lists the owned files and policy for this scope\n" +
       "         opencode debug agent designer   # OpenCode V1: shows the applied agent config\n",

@@ -44,9 +44,69 @@ export interface AgentsConfig {
   version: number
   scope: Scope
   agents: Record<Role, AgentChoice>
+  /** Retry guidance for the model fallback, rendered into the AGENTS.md policy block. */
+  fallbackPolicy: FallbackPolicy
+}
+
+/**
+ * Knobs for the fallback retry, applied by the *orchestrator* between subagent
+ * launches (this plugin has no runtime hook into provider errors — the policy
+ * text is the enforcement). Global, not per-role.
+ */
+export interface FallbackPolicy {
+  /**
+   * Twin re-launches per task after a provider error. `1` (default) matches the
+   * documented one-hop contract; `0` disables the fallback entirely.
+   */
+  maxRetries: number
+  /**
+   * Cool-down in seconds before launching the twin. Rendered as applying to
+   * rate-limit errors only: quota/balance errors fall back immediately, since
+   * no sane delay outlasts a quota window and a drained balance never heals.
+   */
+  retryDelaySeconds: number
+  /**
+   * Treat a subagent producing no output for this many minutes as failed by
+   * timeout and apply the fallback. `0` disables stall detection.
+   */
+  stallTimeoutMinutes: number
+}
+
+/** `1` retry, a 30s rate-limit cool-down, a 10-minute stall timeout. */
+export function defaultFallbackPolicy(): FallbackPolicy {
+  return { maxRetries: 1, retryDelaySeconds: 30, stallTimeoutMinutes: 10 }
 }
 
 const PERMISSION_EFFECTS = new Set<PermissionEffect>(["allow", "ask", "deny"])
+
+/**
+ * Sanity caps for the fallback-policy integers (clamped, not rejected): a
+ * deliberate out-of-bounds value is degraded to the cap instead of silently
+ * reverting to the default, so intent survives.
+ */
+const FALLBACK_POLICY_CAPS = { maxRetries: 10, retryDelaySeconds: 3600, stallTimeoutMinutes: 120 } as const
+
+/** Clamp onto the field's cap; shared by parseFallbackPolicy and the CLI's --set so both paths agree. */
+export function clampFallbackPolicyField(field: keyof FallbackPolicy, value: number): number {
+  return Math.min(value, FALLBACK_POLICY_CAPS[field])
+}
+
+/** Defensive parse of one policy integer: finite non-negative integers only, clamped to the field's cap, else the default. */
+function parsePolicyInt(raw: unknown, fallback: number, field: keyof FallbackPolicy): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw) || raw < 0) return fallback
+  return clampFallbackPolicyField(field, raw)
+}
+
+/** Absent or malformed section → defaults, so a config predating the section stays valid. */
+function parseFallbackPolicy(raw: unknown): FallbackPolicy {
+  const defaults = defaultFallbackPolicy()
+  if (!isRecord(raw)) return defaults
+  return {
+    maxRetries: parsePolicyInt(raw.maxRetries, defaults.maxRetries, "maxRetries"),
+    retryDelaySeconds: parsePolicyInt(raw.retryDelaySeconds, defaults.retryDelaySeconds, "retryDelaySeconds"),
+    stallTimeoutMinutes: parsePolicyInt(raw.stallTimeoutMinutes, defaults.stallTimeoutMinutes, "stallTimeoutMinutes"),
+  }
+}
 
 /** Defensive parse: keep well-formed rules, drop the rest. */
 function parsePermissions(raw: unknown): PermissionRule[] {
@@ -99,7 +159,7 @@ export function defaultChoices(): Record<Role, AgentChoice> {
 }
 
 export function defaultConfig(scope: Scope): AgentsConfig {
-  return { version: CONFIG_VERSION, scope, agents: defaultChoices() }
+  return { version: CONFIG_VERSION, scope, agents: defaultChoices(), fallbackPolicy: defaultFallbackPolicy() }
 }
 
 export function isRole(v: string): v is Role {
@@ -144,7 +204,7 @@ export function parseConfig(data: unknown): AgentsConfig | null {
     if (agents[role] === undefined) agents[role] = defaults[role]
   }
   const version = typeof data.version === "number" && Number.isFinite(data.version) ? data.version : CONFIG_VERSION
-  return { version, scope, agents }
+  return { version, scope, agents, fallbackPolicy: parseFallbackPolicy(data.fallbackPolicy) }
 }
 
 export function readConfig(configPath: string): AgentsConfig | null {
@@ -178,6 +238,22 @@ const READ_ONLY_ROLES: ReadonlySet<Role> = new Set<Role>(["designer", "security"
  */
 export function configWarnings(config: AgentsConfig): string[] {
   const out: string[] = []
+  const hasFallbacks = ROLES.some((role) => config.agents[role].fallback !== undefined)
+  const { fallbackPolicy } = config
+  if (!hasFallbacks) {
+    const defaults = defaultFallbackPolicy()
+    const customized =
+      fallbackPolicy.maxRetries !== defaults.maxRetries ||
+      fallbackPolicy.retryDelaySeconds !== defaults.retryDelaySeconds ||
+      fallbackPolicy.stallTimeoutMinutes !== defaults.stallTimeoutMinutes
+    if (customized) {
+      out.push("fallbackPolicy is set but no role has a fallback model — the policy is ignored until a fallback twin exists")
+    }
+  } else if (fallbackPolicy.maxRetries === 0) {
+    out.push(
+      "fallbackPolicy.maxRetries is 0 — the fallback twins are installed but the policy tells the orchestrator to report provider errors without retrying, so the twins will never be used",
+    )
+  }
   for (const role of ROLES) {
     const choice = config.agents[role]
     for (const root of choice.modifyRoots) {

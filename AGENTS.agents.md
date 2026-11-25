@@ -105,12 +105,10 @@ unavailable model — does not block the task.
 |---|---|
 {{FALLBACK_TABLE_ROWS}}
 
-If one of the subagents above fails to complete because its provider returned an
-error — quota/rate limit (429, "5-hour limit reached"), insufficient balance, or
-model unavailable — retry the same task once with the matching twin:
+{{FALLBACK_RETRY_SENTENCE}}
 
 {{FALLBACK_RULES}}
 
-Retry at most once per task. If the twin also fails, stop and report the error.
+{{FALLBACK_BUDGET_SENTENCE}}
 Do not fall back for ordinary task failures (failing tests, review findings,
 bugs): those are real results, not provider errors.

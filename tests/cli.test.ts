@@ -73,6 +73,89 @@ describe("CLI", () => {
     expect(r.status).toBe(2)
   })
 
+  it("sets the fallback policy via --set and renders it into the AGENTS.md block", () => {
+    const globalDir = tmp("opencode-agents-global-")
+    const r = run(
+      [
+        "init",
+        "--non-interactive",
+        "--set",
+        "fallbackPolicy.maxRetries=2",
+        "--set",
+        "fallbackPolicy.retryDelaySeconds=60",
+        "--set",
+        "fallbackPolicy.stallTimeoutMinutes=15",
+      ],
+      { OPENCODE_CONFIG_DIR: globalDir },
+    )
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain("fallback policy: maxRetries=2 retryDelaySeconds=60 stallTimeoutMinutes=15")
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalDir, "opencode-agents.json"), "utf8")) as {
+      fallbackPolicy: { maxRetries: number; retryDelaySeconds: number; stallTimeoutMinutes: number }
+    }
+    expect(cfg.fallbackPolicy).toEqual({ maxRetries: 2, retryDelaySeconds: 60, stallTimeoutMinutes: 15 })
+    const agentsMd = fs.readFileSync(path.join(globalDir, "AGENTS.md"), "utf8")
+    expect(agentsMd).toContain("For rate-limit errors (429) wait 60 seconds")
+    expect(agentsMd).toContain("Retry at most 2 times per task.")
+    expect(agentsMd).toContain("produces no output for 15 minutes")
+    expect(agentsMd).not.toContain("{{FALLBACK_")
+  })
+
+  it("clamps --set fallbackPolicy values the same way as the config parse (cap and overlong numeral)", () => {
+    const globalDir = tmp("opencode-agents-global-")
+    const r = run(
+      [
+        "init",
+        "--non-interactive",
+        "--set",
+        "fallbackPolicy.maxRetries=50",
+        "--set",
+        `fallbackPolicy.stallTimeoutMinutes=${"9".repeat(310)}`,
+      ],
+      { OPENCODE_CONFIG_DIR: globalDir },
+    )
+    expect(r.status).toBe(0)
+    // Clamped at set time: report, config, and rendered policy all agree.
+    expect(r.stdout).toContain("fallback policy: maxRetries=10 retryDelaySeconds=30 stallTimeoutMinutes=120")
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalDir, "opencode-agents.json"), "utf8")) as {
+      fallbackPolicy: { maxRetries: number; retryDelaySeconds: number; stallTimeoutMinutes: number }
+    }
+    expect(cfg.fallbackPolicy).toEqual({ maxRetries: 10, retryDelaySeconds: 30, stallTimeoutMinutes: 120 })
+    const agentsMd = fs.readFileSync(path.join(globalDir, "AGENTS.md"), "utf8")
+    expect(agentsMd).toContain("Retry at most 10 times per task.")
+    expect(agentsMd).toContain("produces no output for 120 minutes")
+    expect(agentsMd).not.toContain("Retry at most 50 times")
+    expect(agentsMd).not.toContain("Infinity")
+  })
+
+  it("rejects invalid fallbackPolicy --set values", () => {
+    const globalDir = tmp("opencode-agents-global-")
+    for (const expr of [
+      "fallbackPolicy.nope=5",
+      "fallbackPolicy.maxRetries=-1",
+      "fallbackPolicy.maxRetries=",
+      "fallbackPolicy.retryDelaySeconds=1.5",
+      "fallbackPolicy.retryDelaySeconds=1e3",
+      "fallbackPolicy.retryDelaySeconds=0x10",
+      "fallbackPolicy.retryDelaySeconds=+5",
+      "fallbackPolicy",
+      "fallbackPolicy.maxRetries.x=1",
+    ]) {
+      const r = run(["init", "--non-interactive", "--set", expr], { OPENCODE_CONFIG_DIR: globalDir })
+      expect(r.status).toBe(2)
+    }
+    // Nothing was written by the failed runs.
+    expect(fs.existsSync(path.join(globalDir, "opencode-agents.json"))).toBe(false)
+  })
+
+  it("shows the fallback policy in inspect output", () => {
+    const globalDir = tmp("opencode-agents-global-")
+    run(["init", "--non-interactive", "--set", "fallbackPolicy.retryDelaySeconds=0"], { OPENCODE_CONFIG_DIR: globalDir })
+    const r = run(["inspect"], { OPENCODE_CONFIG_DIR: globalDir })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain("fallback policy: maxRetries=1 retryDelaySeconds=0 stallTimeoutMinutes=10")
+  })
+
   it("adds modifyRoots via --add-root and renders the edit allow", () => {
     const globalDir = tmp("opencode-agents-global-")
     const r = run(["init", "--non-interactive", "--add-root", "qa=src", "--add-root", "qa=."], {

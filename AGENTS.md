@@ -18,9 +18,12 @@ Pure Node ESM, zero runtime deps, no CI. Node >= 20 (build targets `node20`).
 - Order after a template edit: `npm run gen` → `npm run typecheck` → `npm test`.
 - Render-time placeholders: `{{MODEL}}`, `{{FALLBACK_MODEL}}`, `{{TWIN_MODE}}`,
   `{{TWIN_HIDDEN}}`, `{{PERMISSION_OVERRIDES}}`; policy: `{{FALLBACK_TABLE_ROWS}}`,
-  `{{FALLBACK_RULES}}` (both only inside the optional fallback section, after the
+  `{{FALLBACK_RULES}}`, `{{FALLBACK_RETRY_SENTENCE}}`, `{{FALLBACK_BUDGET_SENTENCE}}`
+  (all only inside the optional fallback section, after the
   `<!-- fallback-section -->` sentinel in `AGENTS.agents.md`). `renderTemplates`
-  throws if any `{{` survives.
+  throws if any `{{` survives; `renderPolicy` likewise throws on a surviving
+  `{{` in the rendered fallback body (the two sentence placeholders are filled
+  from `config.fallbackPolicy` — see `fallbackSentences`).
 - Templates author permission rules in the V2 array shape; `renderTemplates`
   rewrites the frontmatter to a **V1-native `permission:` map** (`shell`→`bash`,
   `subagent`→`task`, `write`/`patch`→`edit`) so both runtimes honor it (V2
@@ -67,7 +70,10 @@ hand in `scripts/gen-agents.mjs`; adding a role means both places plus new
 `parseConfig` is **forward-compatible**: a role entry that is *absent* is filled
 from `defaultChoices()`, so adding a role never invalidates existing configs; a
 *present but model-less* entry and a config with no role entries at all still
-parse to `null`.
+parse to `null`. The `fallbackPolicy` section is forward-compatible too, with
+softer recovery: absent → `defaultFallbackPolicy()` (1 / 30 / 10), and a
+per-field invalid value falls back to that field's default (valid non-negative
+integers are clamped to `FALLBACK_POLICY_CAPS`) instead of rejecting the config.
 
 ## Commands
 
